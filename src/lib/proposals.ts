@@ -46,6 +46,39 @@ export const PROPOSAL_MODERATION_BADGE: Record<
   rejected: "bg-slate-200 text-slate-700 border-slate-300",
 };
 
+export type ProposalSlot = "morning" | "afternoon" | "evening";
+
+export const PROPOSAL_SLOT_OPTIONS: ProposalSlot[] = [
+  "morning",
+  "afternoon",
+  "evening",
+];
+
+export const PROPOSAL_SLOT_LABELS: Record<ProposalSlot, string> = {
+  morning: "Vormittag",
+  afternoon: "Nachmittag",
+  evening: "Abend",
+};
+
+// Reisezeitraum 13.-17.06. (Jahr aus ai-context: 2026).
+export const TRIP_DAYS: string[] = [
+  "2026-06-13",
+  "2026-06-14",
+  "2026-06-15",
+  "2026-06-16",
+  "2026-06-17",
+];
+
+export function formatTripDay(iso: string): string {
+  const date = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleDateString("de-DE", {
+    weekday: "short",
+    day: "2-digit",
+    month: "2-digit",
+  });
+}
+
 export type EventProposal = {
   id: string;
   title: string;
@@ -60,6 +93,11 @@ export type EventProposal = {
   moderation_status: ProposalModerationStatus;
   is_active: boolean;
   sort_order: number;
+  scheduled_day: string | null;
+  scheduled_slot: ProposalSlot | null;
+  min_participants: number | null;
+  capacity: number | null;
+  plan_note: string | null;
   submitted_by_participant_id: string | null;
   created_at: string;
   updated_at: string;
@@ -78,6 +116,11 @@ export type EventProposalInput = {
   moderation_status: ProposalModerationStatus;
   is_active: boolean;
   sort_order: number;
+  scheduled_day: string | null;
+  scheduled_slot: ProposalSlot | null;
+  min_participants: number | null;
+  capacity: number | null;
+  plan_note: string | null;
 };
 
 export function emptyProposalInput(): EventProposalInput {
@@ -94,7 +137,19 @@ export function emptyProposalInput(): EventProposalInput {
     moderation_status: "approved",
     is_active: true,
     sort_order: 0,
+    scheduled_day: null,
+    scheduled_slot: null,
+    min_participants: null,
+    capacity: null,
+    plan_note: null,
   };
+}
+
+// Ein Vorschlag ist im Gruppenplan, sobald Tag UND Slot gesetzt sind.
+export function isScheduled(
+  proposal: Pick<EventProposal, "scheduled_day" | "scheduled_slot">,
+): boolean {
+  return Boolean(proposal.scheduled_day) && Boolean(proposal.scheduled_slot);
 }
 
 // `datetime-local`-Inputs liefern Strings ohne Zeitzone. Wir interpretieren
@@ -134,4 +189,15 @@ export function trimOrNull(value: string | null | undefined): string | null {
   if (value == null) return null;
   const trimmed = value.trim();
   return trimmed.length === 0 ? null : trimmed;
+}
+
+// `number | null` aus einem Input-Wert. Negative Werte werden auf 0
+// geklemmt, leere Eingaben werden zu null.
+export function parseOptionalInt(value: string): number | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  const num = Number(trimmed);
+  if (!Number.isFinite(num)) return null;
+  const int = Math.trunc(num);
+  return int < 0 ? 0 : int;
 }

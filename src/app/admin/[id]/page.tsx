@@ -33,6 +33,11 @@ function toInput(proposal: EventProposal): EventProposalInput {
     moderation_status: proposal.moderation_status,
     is_active: proposal.is_active,
     sort_order: proposal.sort_order,
+    scheduled_day: proposal.scheduled_day,
+    scheduled_slot: proposal.scheduled_slot,
+    min_participants: proposal.min_participants,
+    capacity: proposal.capacity,
+    plan_note: proposal.plan_note,
   };
 }
 

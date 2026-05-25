@@ -5,14 +5,20 @@ import { Loader2, Save } from "lucide-react";
 import {
   PROPOSAL_MODERATION_LABELS,
   PROPOSAL_MODERATION_OPTIONS,
+  PROPOSAL_SLOT_LABELS,
+  PROPOSAL_SLOT_OPTIONS,
   PROPOSAL_STATUS_LABELS,
   PROPOSAL_STATUS_OPTIONS,
+  TRIP_DAYS,
   emptyProposalInput,
+  formatTripDay,
   fromLocalDatetimeInputValue,
+  parseOptionalInt,
   toLocalDatetimeInputValue,
   trimOrNull,
   type EventProposalInput,
   type ProposalModerationStatus,
+  type ProposalSlot,
   type ProposalStatus,
 } from "@/lib/proposals";
 import { ProposalImagePicker } from "@/components/ProposalImagePicker";
@@ -56,6 +62,19 @@ export function ProposalForm({
     useState<ProposalModerationStatus>(base.moderation_status);
   const [isActive, setIsActive] = useState(base.is_active);
   const [sortOrder, setSortOrder] = useState<number>(base.sort_order);
+  const [scheduledDay, setScheduledDay] = useState<string>(
+    base.scheduled_day ?? "",
+  );
+  const [scheduledSlot, setScheduledSlot] = useState<ProposalSlot | "">(
+    base.scheduled_slot ?? "",
+  );
+  const [minParticipants, setMinParticipants] = useState<string>(
+    base.min_participants != null ? String(base.min_participants) : "",
+  );
+  const [capacity, setCapacity] = useState<string>(
+    base.capacity != null ? String(base.capacity) : "",
+  );
+  const [planNote, setPlanNote] = useState<string>(base.plan_note ?? "");
   const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   const [titleError, setTitleError] = useState<string | null>(null);
@@ -84,6 +103,11 @@ export function ProposalForm({
       moderation_status: moderationStatus,
       is_active: isActive,
       sort_order: Number.isFinite(sortOrder) ? sortOrder : 0,
+      scheduled_day: scheduledDay ? scheduledDay : null,
+      scheduled_slot: scheduledSlot ? (scheduledSlot as ProposalSlot) : null,
+      min_participants: parseOptionalInt(minParticipants),
+      capacity: parseOptionalInt(capacity),
+      plan_note: trimOrNull(planNote),
     };
 
     void onSubmit(payload, pendingFile);
@@ -236,6 +260,120 @@ export function ProposalForm({
           neues Foto hochgeladen wurde.
         </p>
       </div>
+
+      <fieldset className="rounded-3xl border border-sky-100 bg-sky-50/50 px-4 py-4 space-y-4">
+        <legend className="px-2 text-sm font-semibold text-sky-900">
+          Gruppenplan
+        </legend>
+        <p className="text-xs text-sky-900/80">
+          Wenn Tag und Zeitraum gesetzt sind, erscheint der Vorschlag im
+          Gruppenplan. Sonst bleibt er im Aktivitaetspool.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label htmlFor="scheduled_day" className={labelClass}>
+              Geplanter Tag
+            </label>
+            <select
+              id="scheduled_day"
+              value={scheduledDay}
+              onChange={(e) => setScheduledDay(e.target.value)}
+              className={inputClass}
+              disabled={isSaving}
+            >
+              <option value="">Noch nicht eingeplant</option>
+              {TRIP_DAYS.map((day) => (
+                <option key={day} value={day}>
+                  {formatTripDay(day)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="scheduled_slot" className={labelClass}>
+              Geplanter Zeitraum
+            </label>
+            <select
+              id="scheduled_slot"
+              value={scheduledSlot}
+              onChange={(e) =>
+                setScheduledSlot(e.target.value as ProposalSlot | "")
+              }
+              className={inputClass}
+              disabled={isSaving}
+            >
+              <option value="">Noch nicht eingeplant</option>
+              {PROPOSAL_SLOT_OPTIONS.map((slot) => (
+                <option key={slot} value={slot}>
+                  {PROPOSAL_SLOT_LABELS[slot]}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label htmlFor="min_participants" className={labelClass}>
+              Mindestteilnehmer
+            </label>
+            <input
+              id="min_participants"
+              type="number"
+              inputMode="numeric"
+              min={0}
+              value={minParticipants}
+              onChange={(e) => setMinParticipants(e.target.value)}
+              className={inputClass}
+              placeholder="optional"
+              disabled={isSaving}
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Ab wann ist das Event sinnvoll?
+            </p>
+          </div>
+
+          <div>
+            <label htmlFor="capacity" className={labelClass}>
+              Maximale Teilnehmer
+            </label>
+            <input
+              id="capacity"
+              type="number"
+              inputMode="numeric"
+              min={0}
+              value={capacity}
+              onChange={(e) => setCapacity(e.target.value)}
+              className={inputClass}
+              placeholder="optional"
+              disabled={isSaving}
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Ab wann wird es eventuell zu gross?
+            </p>
+          </div>
+        </div>
+
+        <div>
+          <label htmlFor="plan_note" className={labelClass}>
+            Plan-Notiz
+          </label>
+          <input
+            id="plan_note"
+            type="text"
+            value={planNote}
+            onChange={(e) => setPlanNote(e.target.value)}
+            className={inputClass}
+            placeholder="z. B. Treffpunkt wird noch geklaert"
+            disabled={isSaving}
+          />
+          <p className="mt-1 text-xs text-slate-500">
+            Optional. Wird auf den Karten klein angezeigt.
+          </p>
+        </div>
+      </fieldset>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>

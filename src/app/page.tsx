@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Loader2, MessageSquarePlus, Sparkles } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { HeroSection } from "@/components/HeroSection";
 import { ProfileCard } from "@/components/ProfileCard";
-import { ProposalCard } from "@/components/ProposalCard";
+import { GroupPlan } from "@/components/GroupPlan";
+import { ActivityPool } from "@/components/ActivityPool";
 import { ProposalDetail } from "@/components/ProposalDetail";
 import { SuggestProposalModal } from "@/components/SuggestProposalModal";
 import { Toast, type ToastVariant } from "@/components/Toast";
@@ -17,6 +18,12 @@ import {
 } from "@/lib/participants";
 
 type ToastState = { message: string; variant: ToastVariant } | null;
+
+type Counts = {
+  inParticipants: ParticipantProfile[];
+  maybe: number;
+  out: number;
+};
 
 export default function HomePage() {
   const {
@@ -57,9 +64,7 @@ export default function HomePage() {
     return map;
   }, [participants, participant]);
 
-  type Counts = { inParticipants: ParticipantProfile[]; maybe: number; out: number };
-
-  const perProposal = useMemo(() => {
+  const countsByProposal = useMemo(() => {
     const result = new Map<string, Counts>();
     for (const proposal of proposals) {
       result.set(proposal.id, { inParticipants: [], maybe: 0, out: 0 });
@@ -78,6 +83,17 @@ export default function HomePage() {
     }
     return result;
   }, [proposals, votes, participantsById]);
+
+  const myVoteByProposal = useMemo(() => {
+    const map = new Map<string, EventVoteChoice>();
+    if (!participant) return map;
+    for (const v of votes) {
+      if (v.participant_id === participant.id) {
+        map.set(v.proposal_id, v.vote);
+      }
+    }
+    return map;
+  }, [votes, participant]);
 
   const openProposal = useMemo(
     () => proposals.find((p) => p.id === openProposalId) ?? null,
@@ -172,14 +188,13 @@ export default function HomePage() {
     void reload();
   }
 
-  const everythingEmpty =
-    !proposalsLoading && proposals.length === 0 && !proposalsLoadError;
+  const canSuggest = Boolean(participant) && isConfigured;
 
   return (
     <main className="min-h-screen bg-stone-50">
       <HeroSection />
 
-      <div className="mx-auto max-w-3xl px-4 sm:px-6 -mt-12 sm:-mt-16 pb-16 space-y-6 relative">
+      <div className="mx-auto max-w-3xl px-4 sm:px-6 -mt-12 sm:-mt-16 pb-16 space-y-8 relative">
         {!isConfigured && (
           <div className="rounded-3xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900 shadow-soft">
             <p className="font-medium">Supabase ist noch nicht verbunden.</p>
@@ -204,92 +219,57 @@ export default function HomePage() {
           onAvatarUploaded={handleAvatarUploaded}
         />
 
-        <section className="space-y-3">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h2 className="text-xl font-semibold tracking-tight text-slate-900">
-                Aktuelle Vorschlaege
-              </h2>
-              <p className="text-sm text-slate-600">
-                Tipp auf eine Karte fuer Details und Abstimmung.
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              {votingFor && (
-                <span className="inline-flex items-center gap-1 text-xs font-medium text-sky-700">
-                  <Loader2 size={12} className="animate-spin" />
-                  Speichere Stimme...
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={handleOpenSuggest}
-                disabled={!isConfigured}
-                className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2.5 text-sm font-semibold text-white shadow-soft transition active:scale-[0.99] hover:from-amber-500 hover:to-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <MessageSquarePlus size={16} />
-                Vorschlag machen
-              </button>
-            </div>
+        {votingFor && (
+          <div className="flex justify-end">
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-sky-700">
+              <Loader2 size={12} className="animate-spin" />
+              Speichere Stimme...
+            </span>
           </div>
+        )}
 
-          {!participant && isConfigured && (
-            <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
-              Speichere zuerst deinen Namen, dann kannst du einen Vorschlag
-              machen und abstimmen.
-            </p>
-          )}
-
-          {proposalsLoadError && (
-            <div
-              role="alert"
-              className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"
-            >
-              {proposalsLoadError}
-            </div>
-          )}
-
-          {proposalsLoading && (
-            <div className="flex items-center gap-2 rounded-3xl bg-white px-5 py-6 text-sm text-slate-600 shadow-soft">
-              <Loader2 size={16} className="animate-spin" />
-              Lade Vorschlaege...
-            </div>
-          )}
-
-          {everythingEmpty && (
-            <div className="rounded-3xl border border-dashed border-slate-200 bg-white px-6 py-10 text-center shadow-soft">
-              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-soft">
-                <Sparkles size={20} />
-              </div>
-              <p className="text-base font-medium text-slate-700">
-                Noch keine Vorschlaege.
-              </p>
-              <p className="mt-1 text-sm text-slate-500">
-                Mach den ersten Vorschlag fuer die Crew.
-              </p>
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {proposals.map((proposal) => {
-              const c =
-                perProposal.get(proposal.id) ?? {
-                  inParticipants: [],
-                  maybe: 0,
-                  out: 0,
-                };
-              return (
-                <ProposalCard
-                  key={proposal.id}
-                  proposal={proposal}
-                  inParticipants={c.inParticipants}
-                  maybeCount={c.maybe}
-                  onOpen={() => setOpenProposalId(proposal.id)}
-                />
-              );
-            })}
+        {proposalsLoadError && (
+          <div
+            role="alert"
+            className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"
+          >
+            {proposalsLoadError}
           </div>
-        </section>
+        )}
+
+        {proposalsLoading && (
+          <div className="flex items-center gap-2 rounded-3xl bg-white px-5 py-6 text-sm text-slate-600 shadow-soft">
+            <Loader2 size={16} className="animate-spin" />
+            Lade Vorschlaege...
+          </div>
+        )}
+
+        {!proposalsLoading && !proposalsLoadError && (
+          <>
+            <GroupPlan
+              proposals={proposals}
+              countsByProposal={countsByProposal}
+              myVoteByProposal={myVoteByProposal}
+              onOpenProposal={(id) => setOpenProposalId(id)}
+            />
+
+            {!participant && isConfigured && (
+              <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+                Speichere zuerst deinen Namen, dann kannst du abstimmen und
+                eigene Ideen vorschlagen.
+              </p>
+            )}
+
+            <ActivityPool
+              proposals={proposals}
+              countsByProposal={countsByProposal}
+              myVoteByProposal={myVoteByProposal}
+              onOpenProposal={(id) => setOpenProposalId(id)}
+              onSuggest={handleOpenSuggest}
+              canSuggest={canSuggest}
+            />
+          </>
+        )}
 
         <footer className="pt-4 text-center text-xs text-slate-400">
           Mallorca-Connect &middot; Alles kann, nichts muss.
