@@ -136,7 +136,11 @@ export default function HomePage() {
   );
 
   const handleProfileSubmit = useCallback(
-    async (input: { display_name: string; hotel_info: string | null }) => {
+    async (input: {
+      display_name: string;
+      hotel_info: string | null;
+      email: string;
+    }) => {
       const result = await saveProfile(input);
       if (result) {
         setToast({
@@ -278,8 +282,6 @@ export default function HomePage() {
             </p>
           </div>
         )}
-
-        <WelcomeCard />
 
         <ProfileCard
           participant={participant}
@@ -429,6 +431,11 @@ export default function HomePage() {
           onClose={() => setToast(null)}
         />
       )}
+
+      <WelcomeCard
+        hasParticipant={Boolean(participant)}
+        isLoading={profileLoading}
+      />
     </main>
   );
 }

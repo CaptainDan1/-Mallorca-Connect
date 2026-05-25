@@ -11,6 +11,7 @@ import {
   Copy,
   Eye,
   Hotel,
+  Mail,
   ImageOff,
   Loader2,
   Search,
@@ -129,6 +130,7 @@ function matchesSearch(row: ParticipantRow, query: string): boolean {
   if (!q) return true;
   if (row.display_name.toLowerCase().includes(q)) return true;
   if ((row.hotel_info ?? "").toLowerCase().includes(q)) return true;
+  if ((row.email ?? "").toLowerCase().includes(q)) return true;
   if (row.id.toLowerCase().includes(q)) return true;
   return false;
 }
@@ -166,7 +168,7 @@ export default function AdminTeilnehmerPage() {
         supabase
           .from(PARTICIPANTS_TABLE)
           .select(
-            "id, display_name, hotel_info, avatar_url, last_seen_at, created_at, updated_at",
+            "id, display_name, hotel_info, avatar_url, email, last_seen_at, created_at, updated_at",
           )
           .order("created_at", { ascending: false }),
         supabase
@@ -388,7 +390,7 @@ export default function AdminTeilnehmerPage() {
             type="text"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Suche nach Name, Hotel oder ID..."
+            placeholder="Suche nach Name, Hotel, E-Mail oder ID..."
             className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-200"
           />
         </div>
@@ -572,6 +574,23 @@ function ParticipantCard({
             <p className="inline-flex items-center gap-1.5 text-sm text-slate-600">
               <Hotel size={14} className="text-slate-400" />
               {row.hotel_info}
+            </p>
+          )}
+
+          {row.email ? (
+            <p className="inline-flex items-center gap-1.5 break-all text-sm text-slate-600">
+              <Mail size={14} className="text-slate-400" />
+              <a
+                href={`mailto:${row.email}`}
+                className="hover:text-sky-700 hover:underline"
+              >
+                {row.email}
+              </a>
+            </p>
+          ) : (
+            <p className="inline-flex items-center gap-1.5 text-xs text-slate-400">
+              <Mail size={13} />
+              Noch keine E-Mail hinterlegt
             </p>
           )}
 

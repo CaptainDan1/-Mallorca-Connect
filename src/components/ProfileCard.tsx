@@ -3,7 +3,11 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, Loader2, Pencil, X } from "lucide-react";
 import { avatarGradient, getInitials } from "@/lib/utils";
-import type { ParticipantProfile } from "@/lib/participants";
+import {
+  isLikelyEmail,
+  normalizeEmail,
+  type ParticipantProfile,
+} from "@/lib/participants";
 import { AvatarUpload } from "@/components/AvatarUpload";
 
 type ProfileCardProps = {
@@ -16,6 +20,7 @@ type ProfileCardProps = {
   onSubmit: (input: {
     display_name: string;
     hotel_info: string | null;
+    email: string;
   }) => Promise<void> | void;
   isUpdatingAvatar: boolean;
   avatarError: string | null;
@@ -36,6 +41,8 @@ export function ProfileCard({
 }: ProfileCardProps) {
   const [name, setName] = useState(participant?.display_name ?? "");
   const [hotel, setHotel] = useState(participant?.hotel_info ?? "");
+  const [email, setEmail] = useState(participant?.email ?? "");
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState(false);
   // Edit-Modus: wenn noch kein Profil existiert, automatisch offen.
   const [isEditing, setIsEditing] = useState<boolean>(!participant);
@@ -45,7 +52,10 @@ export function ProfileCard({
     if (participant) {
       setName(participant.display_name);
       setHotel(participant.hotel_info ?? "");
-      setIsEditing(false);
+      setEmail(participant.email ?? "");
+      // Altprofile ohne E-Mail oeffnen direkt im Edit-Modus, damit die
+      // Pflicht-E-Mail nachgepflegt wird.
+      setIsEditing(!participant.email);
     } else if (!isLoading) {
       setIsEditing(true);
     }
@@ -61,10 +71,25 @@ export function ProfileCard({
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (isSaving || disabled) return;
+
+    const cleanedEmail = normalizeEmail(email);
+    if (!cleanedEmail) {
+      setEmailError(
+        "Bitte gib deine E-Mail an. Sie wird nicht oeffentlich angezeigt.",
+      );
+      return;
+    }
+    if (!isLikelyEmail(cleanedEmail)) {
+      setEmailError("Diese E-Mail sieht nicht ganz richtig aus.");
+      return;
+    }
+    setEmailError(null);
+
     setJustSaved(false);
     await onSubmit({
       display_name: name,
       hotel_info: hotel.trim() ? hotel.trim() : null,
+      email: cleanedEmail,
     });
     if (!saveError) {
       setJustSaved(true);
@@ -75,8 +100,13 @@ export function ProfileCard({
 
   function handleCancelEdit() {
     if (!participant) return; // Ohne Profil kein Abbrechen.
+    // Auch kein Abbrechen, solange noch keine E-Mail gepflegt ist --
+    // wir wollen die Wiedererkennung sicherstellen.
+    if (!participant.email) return;
     setName(participant.display_name);
     setHotel(participant.hotel_info ?? "");
+    setEmail(participant.email ?? "");
+    setEmailError(null);
     setIsEditing(false);
   }
 
@@ -140,7 +170,7 @@ export function ProfileCard({
                 Wer bist du?
               </p>
               <p className="text-sm text-slate-500">
-                Name reicht. Hotel ist optional.
+                Name und E-Mail sind Pflicht. Hotel ist optional.
               </p>
             </>
           )}
@@ -190,6 +220,47 @@ export function ProfileCard({
 
           <div>
             <label
+              htmlFor="profile-email"
+              className="mb-1 block text-xs font-medium text-slate-600"
+            >
+              E-Mail
+            </label>
+            <input
+              id="profile-email"
+              type="email"
+              required
+              autoComplete="email"
+              inputMode="email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (emailError) setEmailError(null);
+              }}
+              disabled={disabled || isSaving || isLoading}
+              placeholder="name@beispiel.de"
+              aria-describedby="profile-email-help"
+              aria-invalid={emailError ? true : undefined}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-200 disabled:bg-slate-50"
+            />
+            <p
+              id="profile-email-help"
+              className="mt-1 text-xs text-slate-500"
+            >
+              Pflichtfeld zur Wiedererkennung. Wird nicht oeffentlich
+              angezeigt.
+            </p>
+            {emailError && (
+              <p
+                role="alert"
+                className="mt-1 text-xs text-rose-700"
+              >
+                {emailError}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label
               htmlFor="profile-hotel"
               className="mb-1 block text-xs font-medium text-slate-600"
             >
@@ -223,7 +294,8 @@ export function ProfileCard({
                 disabled ||
                 isSaving ||
                 isLoading ||
-                name.trim().length === 0
+                name.trim().length === 0 ||
+                email.trim().length === 0
               }
               className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-3 text-sm font-semibold text-white shadow-soft transition active:scale-[0.99] hover:from-amber-500 hover:to-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
             >

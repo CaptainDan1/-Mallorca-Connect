@@ -6,6 +6,8 @@ import {
   LAST_SEEN_REFRESH_MS,
   PARTICIPANTS_TABLE,
   PARTICIPANT_ID_STORAGE_KEY,
+  isLikelyEmail,
+  normalizeEmail,
   type ParticipantInput,
   type ParticipantProfile,
 } from "@/lib/participants";
@@ -26,7 +28,7 @@ export type UseParticipantResult = {
 };
 
 const PROFILE_COLUMNS =
-  "id, display_name, hotel_info, avatar_url, last_seen_at, created_at, updated_at";
+  "id, display_name, hotel_info, avatar_url, email, last_seen_at, created_at, updated_at";
 
 function shouldRefreshLastSeen(value: string | null | undefined): boolean {
   if (!value) return true;
@@ -148,7 +150,7 @@ export function useParticipant(): UseParticipantResult {
   }, [configured]);
 
   const saveProfile = useCallback<UseParticipantResult["saveProfile"]>(
-    async ({ display_name, hotel_info }) => {
+    async ({ display_name, hotel_info, email }) => {
       if (!configured) {
         setSaveError(
           "Supabase ist nicht konfiguriert. Bitte erst die Environment-Variablen setzen.",
@@ -162,6 +164,18 @@ export function useParticipant(): UseParticipantResult {
         return null;
       }
 
+      const cleanedEmail = normalizeEmail(email);
+      if (!cleanedEmail) {
+        setSaveError(
+          "Bitte gib deine E-Mail an. Sie wird nicht oeffentlich angezeigt.",
+        );
+        return null;
+      }
+      if (!isLikelyEmail(cleanedEmail)) {
+        setSaveError("Diese E-Mail sieht nicht ganz richtig aus.");
+        return null;
+      }
+
       setIsSaving(true);
       setSaveError(null);
 
@@ -171,16 +185,21 @@ export function useParticipant(): UseParticipantResult {
         const payload = {
           display_name: cleanedName,
           hotel_info: cleanedHotel,
+          email: cleanedEmail,
           last_seen_at: new Date().toISOString(),
         };
 
+        // Wiedererkennung:
+        //   1. participant.id (aus localStorage geladen) hat Vorrang.
+        //   2. Sonst Suche nach gleicher E-Mail (case-insensitiv).
+        //   Name-Fallback bewusst entfernt -- Namen sind nicht eindeutig.
         let targetId = participant?.id ?? null;
 
         if (!targetId) {
           const { data: existingRaw, error: lookupError } = await supabase
             .from(PARTICIPANTS_TABLE)
             .select("id")
-            .ilike("display_name", cleanedName)
+            .ilike("email", cleanedEmail)
             .limit(1)
             .maybeSingle();
           if (lookupError) throw lookupError;
