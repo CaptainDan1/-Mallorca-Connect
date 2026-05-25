@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -13,7 +13,6 @@ import {
   ImageOff,
   Loader2,
   Sparkles,
-  WandSparkles,
   XCircle,
 } from "lucide-react";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
@@ -31,16 +30,6 @@ import {
 
 type ImportPhase = "input" | "preview" | "saving" | "done";
 
-type SuggestionState =
-  | { status: "idle" }
-  | { status: "loading" }
-  | { status: "ok"; imageUrl: string; source: "og" | "twitter" | "jsonld" }
-  | { status: "failed"; reason: string };
-
-type SuggestionApiResponse =
-  | { ok: true; imageUrl: string; source: "og" | "twitter" | "jsonld" }
-  | { ok: false; reason: string };
-
 export default function AdminImportPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -52,9 +41,6 @@ export default function AdminImportPage() {
   const [isLoadingExisting, setIsLoadingExisting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [successCount, setSuccessCount] = useState<number>(0);
-  // Bildvorschlaege pro row.index. Wird nach dem Parsen automatisch fuer
-  // Zeilen mit sourceUrl, aber ohne imageUrl, vom API-Endpunkt geholt.
-  const [suggestions, setSuggestions] = useState<Record<number, SuggestionState>>({});
 
   const counts = useMemo(() => {
     const result = { ok: 0, warning: 0, error: 0, total: rows.length };
@@ -95,13 +81,11 @@ export default function AdminImportPage() {
       const result = parseImportInput({ raw: rawText, existingTitles });
       if (!result.ok) {
         setRows([]);
-        setSuggestions({});
         setParseError(result.error);
         setPhase("input");
         return;
       }
       setRows(result.rows);
-      setSuggestions({});
       setPhase("preview");
     } catch (error) {
       const message =
@@ -114,75 +98,6 @@ export default function AdminImportPage() {
     }
   }, [rawText]);
 
-  // Sobald die Vorschau da ist: fuer alle Zeilen mit Quelle aber ohne Bild
-  // einen Bildvorschlag holen. Fehler blockieren nichts -- werden nur
-  // als kleine Warnung in der Karte angezeigt.
-  useEffect(() => {
-    if (phase !== "preview") return;
-    const toLoad = rows.filter(
-      (row) =>
-        row.payload &&
-        row.payload.source_url &&
-        !row.payload.image_path &&
-        !suggestions[row.index],
-    );
-    if (toLoad.length === 0) return;
-
-    let cancelled = false;
-    setSuggestions((prev) => {
-      const next = { ...prev };
-      for (const row of toLoad) next[row.index] = { status: "loading" };
-      return next;
-    });
-
-    for (const row of toLoad) {
-      const url = row.payload?.source_url;
-      if (!url) continue;
-      const target = `/api/admin/image-suggestion?url=${encodeURIComponent(url)}`;
-      fetch(target, { method: "GET", credentials: "same-origin" })
-        .then(async (response) => {
-          let data: SuggestionApiResponse | null = null;
-          try {
-            data = (await response.json()) as SuggestionApiResponse;
-          } catch {
-            data = null;
-          }
-          if (cancelled) return;
-          if (data && data.ok) {
-            setSuggestions((prev) => ({
-              ...prev,
-              [row.index]: {
-                status: "ok",
-                imageUrl: data.imageUrl,
-                source: data.source,
-              },
-            }));
-          } else {
-            const reason =
-              (data && !data.ok && data.reason) ||
-              `HTTP ${response.status}`;
-            setSuggestions((prev) => ({
-              ...prev,
-              [row.index]: { status: "failed", reason },
-            }));
-          }
-        })
-        .catch((error: unknown) => {
-          if (cancelled) return;
-          const reason =
-            error instanceof Error ? error.message : "Netzwerkfehler.";
-          setSuggestions((prev) => ({
-            ...prev,
-            [row.index]: { status: "failed", reason },
-          }));
-        });
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [phase, rows, suggestions]);
-
   async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -191,7 +106,6 @@ export default function AdminImportPage() {
       const text = await file.text();
       setRawText(text);
       setRows([]);
-      setSuggestions({});
       setPhase("input");
       setParseError(null);
     } catch {
@@ -202,7 +116,6 @@ export default function AdminImportPage() {
   function handleShowExample() {
     setRawText(IMPORT_EXAMPLE_JSON);
     setRows([]);
-    setSuggestions({});
     setPhase("input");
     setParseError(null);
   }
@@ -210,45 +123,10 @@ export default function AdminImportPage() {
   function handleReset() {
     setRawText("");
     setRows([]);
-    setSuggestions({});
     setParseError(null);
     setSaveError(null);
     setSuccessCount(0);
     setPhase("input");
-  }
-
-  // Uebernimmt den Bildvorschlag in das Payload der Zeile und entfernt
-  // die "Bild fehlt"-Warnung. Status der Zeile wird bei Bedarf neu
-  // berechnet (ok / warning / error).
-  function handleAdoptSuggestion(rowIndex: number, imageUrl: string) {
-    setRows((prev) =>
-      prev.map((row) => {
-        if (row.index !== rowIndex) return row;
-        if (!row.payload) return row;
-        const remainingIssues = row.issues.filter(
-          (i) => i.message !== "Bild fehlt",
-        );
-        const hasError = remainingIssues.some((i) => i.level === "error");
-        const nextStatus: ImportRow["status"] = hasError
-          ? "error"
-          : remainingIssues.length > 0
-            ? "warning"
-            : "ok";
-        return {
-          ...row,
-          payload: { ...row.payload, image_path: imageUrl },
-          issues: remainingIssues,
-          status: nextStatus,
-        };
-      }),
-    );
-  }
-
-  function handleDismissSuggestion(rowIndex: number) {
-    setSuggestions((prev) => ({
-      ...prev,
-      [rowIndex]: { status: "failed", reason: "Vorschlag verworfen." },
-    }));
   }
 
   async function handleImport() {
@@ -301,9 +179,8 @@ export default function AdminImportPage() {
             inaktiv) und erscheinen erst nach Freigabe oeffentlich.
           </p>
           <p className="text-xs text-slate-500">
-            Hinweis: Bildvorschlaege werden aus der Quelle (og:image,
-            twitter:image, JSON-LD) gelesen. Wir uebernehmen nur die URL —
-            Bildrechte / Hotlinking bleiben in der Verantwortung des Admins.
+            Bilder sind optional. Aktivitaeten ohne Bild lassen sich
+            spaeter im Admin nachpflegen.
           </p>
         </header>
 
@@ -451,13 +328,7 @@ export default function AdminImportPage() {
 
                 <ul className="space-y-3">
                   {rows.map((row) => (
-                    <PreviewRow
-                      key={row.index}
-                      row={row}
-                      suggestion={suggestions[row.index] ?? { status: "idle" }}
-                      onAdoptSuggestion={handleAdoptSuggestion}
-                      onDismissSuggestion={handleDismissSuggestion}
-                    />
+                    <PreviewRow key={row.index} row={row} />
                   ))}
                 </ul>
 
@@ -508,17 +379,9 @@ export default function AdminImportPage() {
 
 type PreviewRowProps = {
   row: ImportRow;
-  suggestion: SuggestionState;
-  onAdoptSuggestion: (rowIndex: number, imageUrl: string) => void;
-  onDismissSuggestion: (rowIndex: number) => void;
 };
 
-function PreviewRow({
-  row,
-  suggestion,
-  onAdoptSuggestion,
-  onDismissSuggestion,
-}: PreviewRowProps) {
+function PreviewRow({ row }: PreviewRowProps) {
   const payload = row.payload;
   const title =
     payload?.title ?? (typeof row.raw.title === "string" ? row.raw.title : "");
@@ -567,23 +430,23 @@ function PreviewRow({
                   className="h-full w-full object-cover object-center"
                 />
               ) : (
-                <div className="flex h-full w-full items-center justify-center text-slate-400">
-                  <ImageOff size={20} />
+                <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-slate-400">
+                  <ImageOff size={18} />
+                  <span className="text-[10px] font-medium uppercase tracking-wide">
+                    Ohne Bild
+                  </span>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Bildvorschlag aus Quelle, nur wenn (noch) kein Bild gesetzt ist
-              und eine Quelle vorhanden ist. */}
-          {!hasImage && payload?.source_url && (
-            <SuggestionBlock
-              rowIndex={row.index}
-              title={title}
-              suggestion={suggestion}
-              onAdopt={onAdoptSuggestion}
-              onDismiss={onDismissSuggestion}
-            />
+          {/* Bild ist optional. Wir zaehlen das nicht als Warnung -- nur
+              ein dezenter Hinweis, dass der Admin es spaeter ergaenzen
+              kann. */}
+          {!hasImage && (
+            <p className="text-[10px] leading-snug text-slate-500">
+              Bild kann spaeter im Admin ergaenzt werden.
+            </p>
           )}
         </div>
 
@@ -696,102 +559,6 @@ function PreviewRow({
       </div>
     </li>
   );
-}
-
-type SuggestionBlockProps = {
-  rowIndex: number;
-  title: string;
-  suggestion: SuggestionState;
-  onAdopt: (rowIndex: number, imageUrl: string) => void;
-  onDismiss: (rowIndex: number) => void;
-};
-
-function SuggestionBlock({
-  rowIndex,
-  title,
-  suggestion,
-  onAdopt,
-  onDismiss,
-}: SuggestionBlockProps) {
-  if (suggestion.status === "idle" || suggestion.status === "loading") {
-    return (
-      <div className="rounded-xl border border-dashed border-slate-200 bg-white/70 px-2.5 py-2 text-[11px] text-slate-500">
-        <span className="inline-flex items-center gap-1.5">
-          <Loader2 size={12} className="animate-spin" />
-          Bildvorschlag wird aus der Quelle gelesen...
-        </span>
-      </div>
-    );
-  }
-
-  if (suggestion.status === "failed") {
-    return (
-      <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50/60 px-2.5 py-2 text-[11px] text-amber-800">
-        <span className="inline-flex items-start gap-1.5">
-          <AlertTriangle size={12} className="mt-0.5 shrink-0" />
-          <span>
-            Bildvorschlag nicht ermittelbar
-            {suggestion.reason ? ` (${suggestion.reason})` : ""}.
-          </span>
-        </span>
-      </div>
-    );
-  }
-
-  // ok
-  return (
-    <div className="space-y-2 rounded-xl border border-sky-200 bg-sky-50/60 p-2">
-      <div className="overflow-hidden rounded-lg bg-white">
-        <div className="aspect-[16/9] w-full">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={suggestion.imageUrl}
-            alt={`Bildvorschlag fuer ${title}`}
-            className="h-full w-full object-cover object-center"
-            onError={(e) => {
-              // Wenn das Bild nicht laedt: leise auf "failed" umschalten,
-              // damit der Admin sieht, dass die URL nicht nutzbar ist.
-              (e.currentTarget as HTMLImageElement).style.display = "none";
-            }}
-          />
-        </div>
-      </div>
-      <p className="text-[10px] text-slate-500">
-        Quelle:{" "}
-        <span className="font-medium text-slate-700">
-          {labelForSource(suggestion.source)}
-        </span>
-      </p>
-      <div className="flex flex-wrap gap-1.5">
-        <button
-          type="button"
-          onClick={() => onAdopt(rowIndex, suggestion.imageUrl)}
-          className="inline-flex items-center gap-1 rounded-full bg-sky-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-soft transition hover:bg-sky-700"
-        >
-          <WandSparkles size={11} />
-          Bildvorschlag uebernehmen
-        </button>
-        <button
-          type="button"
-          onClick={() => onDismiss(rowIndex)}
-          className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 transition hover:bg-slate-50"
-        >
-          Ignorieren
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function labelForSource(source: "og" | "twitter" | "jsonld"): string {
-  switch (source) {
-    case "og":
-      return "og:image";
-    case "twitter":
-      return "twitter:image";
-    case "jsonld":
-      return "JSON-LD";
-  }
 }
 
 function KV({ label, value }: { label: string; value: React.ReactNode }) {

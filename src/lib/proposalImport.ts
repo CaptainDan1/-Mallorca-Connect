@@ -186,13 +186,15 @@ function parseRow(
     issues.push({ level: "warning", message: "Quelle fehlt" });
   }
 
+  // Bild ist bewusst optional: fehlende Bilder werden NICHT als Warnung
+  // gezaehlt. Nur eine vorhandene aber kaputte Bild-URL ist ein Hinweis.
+  // Der UI-Hinweis "Bild kann spaeter ergaenzt werden" laeuft separat
+  // ueber den Status `payload.image_path == null` in der Vorschau.
   if (rawImageUrl && !imageUrl) {
     issues.push({
       level: "warning",
       message: `Bild-URL sieht nicht wie eine http(s)-URL aus: ${rawImageUrl}`,
     });
-  } else if (!imageUrl) {
-    issues.push({ level: "warning", message: "Bild fehlt" });
   }
 
   // tags: Whitelist gegen DISCOVERY_TAGS. Akzeptiert Array oder einzelnen
