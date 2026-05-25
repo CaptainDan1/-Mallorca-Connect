@@ -46,6 +46,71 @@ export const PROPOSAL_MODERATION_BADGE: Record<
   rejected: "bg-slate-200 text-slate-700 border-slate-300",
 };
 
+// Erlaubte Werte fuer location_area. Freitext in der DB, aber im UI
+// als Auswahl/Pille dargestellt. Reihenfolge geht im Uhrzeigersinn ab
+// Norden, "Mitte" zum Schluss.
+export const LOCATION_AREAS = [
+  "Nord",
+  "Nord-Ost",
+  "Ost",
+  "Sued-Ost",
+  "Sued",
+  "Sued-West",
+  "West",
+  "Nord-West",
+  "Mitte",
+] as const;
+
+export type LocationArea = (typeof LOCATION_AREAS)[number];
+
+// Pillen-Farben pro Himmelsrichtung (Tailwind). Fallback ist neutral.
+export const LOCATION_AREA_BADGE: Record<string, string> = {
+  Nord: "bg-sky-50 text-sky-800 ring-sky-100",
+  "Nord-Ost": "bg-sky-50 text-sky-800 ring-sky-100",
+  Ost: "bg-emerald-50 text-emerald-800 ring-emerald-100",
+  "Sued-Ost": "bg-emerald-50 text-emerald-800 ring-emerald-100",
+  Sued: "bg-amber-50 text-amber-800 ring-amber-100",
+  "Sued-West": "bg-amber-50 text-amber-800 ring-amber-100",
+  West: "bg-rose-50 text-rose-800 ring-rose-100",
+  "Nord-West": "bg-rose-50 text-rose-800 ring-rose-100",
+  Mitte: "bg-violet-50 text-violet-800 ring-violet-100",
+};
+
+// Normalisiert Eingaben wie "süd-ost", "Süden", "SE" auf den
+// kanonischen Wert. Gibt null zurueck, wenn sich nichts erkennen laesst.
+export function normalizeLocationArea(input: unknown): LocationArea | null {
+  if (typeof input !== "string") return null;
+  const cleaned = input
+    .trim()
+    .toLowerCase()
+    // ae/oe/ue -> a/o/u; Umlaute auch direkt entfernen
+    .replace(/ä/g, "a")
+    .replace(/ö/g, "o")
+    .replace(/ü/g, "u")
+    .replace(/ß/g, "ss")
+    .replace(/\s+/g, "-")
+    .replace(/^osten$/, "ost")
+    .replace(/^norden$/, "nord")
+    .replace(/^sueden$/, "sued")
+    .replace(/^suden$/, "sued")
+    .replace(/^westen$/, "west")
+    .replace(/^mitte$|^zentrum$|^zentral$|^inland$/, "mitte");
+  if (!cleaned) return null;
+  // Match gegen unsere kanonischen Werte (auch in kleinbuchstaben)
+  for (const area of LOCATION_AREAS) {
+    if (
+      area
+        .toLowerCase()
+        .replace(/ä/g, "a")
+        .replace(/ö/g, "o")
+        .replace(/ü/g, "u") === cleaned
+    ) {
+      return area;
+    }
+  }
+  return null;
+}
+
 export type ProposalSlot = "morning" | "afternoon" | "evening";
 
 export const PROPOSAL_SLOT_OPTIONS: ProposalSlot[] = [
@@ -98,6 +163,9 @@ export type EventProposal = {
   min_participants: number | null;
   capacity: number | null;
   plan_note: string | null;
+  location_area: string | null;
+  category: string | null;
+  source_url: string | null;
   submitted_by_participant_id: string | null;
   created_at: string;
   updated_at: string;
@@ -121,6 +189,9 @@ export type EventProposalInput = {
   min_participants: number | null;
   capacity: number | null;
   plan_note: string | null;
+  location_area: string | null;
+  category: string | null;
+  source_url: string | null;
 };
 
 export function emptyProposalInput(): EventProposalInput {
@@ -142,7 +213,23 @@ export function emptyProposalInput(): EventProposalInput {
     min_participants: null,
     capacity: null,
     plan_note: null,
+    location_area: null,
+    category: null,
+    source_url: null,
   };
+}
+
+// Slug-aehnliche Normalisierung fuer Dubletten-Vergleich auf Titel.
+export function normalizeTitleSlug(title: string): string {
+  return title
+    .trim()
+    .toLowerCase()
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue")
+    .replace(/ß/g, "ss")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 // Ein Vorschlag ist im Gruppenplan, sobald Tag UND Slot gesetzt sind.
@@ -150,6 +237,30 @@ export function isScheduled(
   proposal: Pick<EventProposal, "scheduled_day" | "scheduled_slot">,
 ): boolean {
   return Boolean(proposal.scheduled_day) && Boolean(proposal.scheduled_slot);
+}
+
+// Vorgemerkt: bereits in einem Slot, aber noch nicht final ("status" =
+// "proposal"). Der Slot wird im Plan gedimmt angezeigt, finales Voting
+// gibt es noch nicht. So sieht die Crew den Vorschlag schon, ohne ihn
+// als fix zu missverstehen.
+export function isTentative(
+  proposal: Pick<
+    EventProposal,
+    "scheduled_day" | "scheduled_slot" | "status"
+  >,
+): boolean {
+  return isScheduled(proposal) && proposal.status !== "confirmed";
+}
+
+// Fix: im Slot UND vom Admin als "Findet statt" bestaetigt. Erst hier
+// gibt es das finale Teilnahme-Voting (Bin dabei / Vielleicht / Bin raus).
+export function isFixed(
+  proposal: Pick<
+    EventProposal,
+    "scheduled_day" | "scheduled_slot" | "status"
+  >,
+): boolean {
+  return isScheduled(proposal) && proposal.status === "confirmed";
 }
 
 // `datetime-local`-Inputs liefern Strings ohne Zeitzone. Wir interpretieren

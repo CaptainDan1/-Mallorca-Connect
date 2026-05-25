@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Loader2, Save } from "lucide-react";
 import {
+  LOCATION_AREAS,
   PROPOSAL_MODERATION_LABELS,
   PROPOSAL_MODERATION_OPTIONS,
   PROPOSAL_SLOT_LABELS,
@@ -75,6 +76,11 @@ export function ProposalForm({
     base.capacity != null ? String(base.capacity) : "",
   );
   const [planNote, setPlanNote] = useState<string>(base.plan_note ?? "");
+  const [locationArea, setLocationArea] = useState<string>(
+    base.location_area ?? "",
+  );
+  const [category, setCategory] = useState<string>(base.category ?? "");
+  const [sourceUrl, setSourceUrl] = useState<string>(base.source_url ?? "");
   const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   const [titleError, setTitleError] = useState<string | null>(null);
@@ -108,6 +114,9 @@ export function ProposalForm({
       min_participants: parseOptionalInt(minParticipants),
       capacity: parseOptionalInt(capacity),
       plan_note: trimOrNull(planNote),
+      location_area: trimOrNull(locationArea),
+      category: trimOrNull(category),
+      source_url: trimOrNull(sourceUrl),
     };
 
     void onSubmit(payload, pendingFile);
@@ -232,8 +241,67 @@ export function ProposalForm({
         />
       </div>
 
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label htmlFor="location_area" className={labelClass}>
+            Lage / Gegend
+          </label>
+          <select
+            id="location_area"
+            value={locationArea}
+            onChange={(e) => setLocationArea(e.target.value)}
+            className={inputClass}
+            disabled={isSaving}
+          >
+            <option value="">– keine –</option>
+            {LOCATION_AREAS.map((area) => (
+              <option key={area} value={area}>
+                {area}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-slate-500">
+            Hilft beim Sortieren nach Himmelsrichtung.
+          </p>
+        </div>
+
+        <div>
+          <label htmlFor="category" className={labelClass}>
+            Kategorie
+          </label>
+          <input
+            id="category"
+            type="text"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className={inputClass}
+            placeholder="z. B. Chillen, Aktiv, Kultur"
+            disabled={isSaving}
+          />
+        </div>
+      </div>
+
+      <div>
+        <label htmlFor="source_url" className={labelClass}>
+          Quelle / Link (optional)
+        </label>
+        <input
+          id="source_url"
+          type="url"
+          value={sourceUrl}
+          onChange={(e) => setSourceUrl(e.target.value)}
+          className={inputClass}
+          placeholder="https://..."
+          disabled={isSaving}
+        />
+      </div>
+
       <div>
         <span className={labelClass}>Event-Foto</span>
+        <p className="mb-2 text-xs text-slate-500">
+          Empfohlenes Bildformat: Querformat 16:9, z. B. 1600 × 900 px.
+          Andere Formate werden mittig gecroppt.
+        </p>
         <ProposalImagePicker
           currentImagePath={base.image_path ?? null}
           disabled={isSaving}
@@ -393,6 +461,11 @@ export function ProposalForm({
               </option>
             ))}
           </select>
+          <p className="mt-1 text-xs text-slate-500">
+            <strong>Idee</strong> = nur vorgemerkt (gedaempft im Plan, kein
+            Voting). <strong>Findet statt</strong> = fix (farbig, Crew kann
+            final abstimmen).
+          </p>
         </div>
 
         <div>

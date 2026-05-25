@@ -206,14 +206,14 @@ function DiscoveryCard({
         type="button"
         onClick={onOpen}
         aria-label={`${proposal.title} oeffnen`}
-        className="relative block h-56 w-full overflow-hidden bg-gradient-to-br from-amber-200 via-orange-200 to-sky-200 text-left focus:outline-none focus:ring-2 focus:ring-sky-300"
+        className="relative block aspect-[16/9] w-full overflow-hidden bg-gradient-to-br from-amber-200 via-orange-200 to-sky-200 text-left focus:outline-none focus:ring-2 focus:ring-sky-300"
       >
         {hasImage ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={proposal.image_path as string}
             alt={proposal.title}
-            className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+            className="h-full w-full object-cover object-center transition duration-500 group-hover:scale-[1.03]"
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-white/90">

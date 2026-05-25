@@ -16,7 +16,7 @@ import {
   type EventVoteChoice,
   type ParticipantProfile,
 } from "@/lib/participants";
-import { isScheduled } from "@/lib/proposals";
+import { isFixed } from "@/lib/proposals";
 
 type ToastState = { message: string; variant: ToastVariant } | null;
 
@@ -259,7 +259,7 @@ export default function HomePage() {
     : [];
   const openIsInterested =
     openProposal != null && myInterestSet.has(openProposal.id);
-  const openScheduled = openProposal ? isScheduled(openProposal) : false;
+  const openIsFixed = openProposal ? isFixed(openProposal) : false;
 
   return (
     <main className="min-h-screen bg-stone-50">
@@ -330,6 +330,7 @@ export default function HomePage() {
               proposals={proposals}
               countsByProposal={countsByProposal}
               myVoteByProposal={myVoteByProposal}
+              interestCounts={interestCounts}
               onOpenProposal={(id) => setOpenProposalId(id)}
             />
 
@@ -387,7 +388,10 @@ export default function HomePage() {
           onClose={() => setOpenProposalId(null)}
           onVote={handleVote}
           onToggleInterest={(id) => {
-            if (!openScheduled) void handleToggleInterest(id);
+            // Interesse ist bei Pool- UND vorgemerkten Vorschlaegen
+            // erlaubt. Erst wenn der Vorschlag "fix" ist, schaltet
+            // das Modal auf das finale Voting um.
+            if (!openIsFixed) void handleToggleInterest(id);
           }}
         />
       )}

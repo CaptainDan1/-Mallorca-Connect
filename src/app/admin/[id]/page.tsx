@@ -38,6 +38,9 @@ function toInput(proposal: EventProposal): EventProposalInput {
     min_participants: proposal.min_participants,
     capacity: proposal.capacity,
     plan_note: proposal.plan_note,
+    location_area: proposal.location_area,
+    category: proposal.category,
+    source_url: proposal.source_url,
   };
 }
 

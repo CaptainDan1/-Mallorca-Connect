@@ -16,11 +16,13 @@ import {
   X,
 } from "lucide-react";
 import {
+  LOCATION_AREA_BADGE,
   PROPOSAL_SLOT_LABELS,
   PROPOSAL_STATUS_BADGE,
   PROPOSAL_STATUS_LABELS,
   formatProposalDate,
   formatTripDay,
+  isFixed,
   isScheduled,
   type EventProposal,
 } from "@/lib/proposals";
@@ -67,6 +69,9 @@ export function ProposalDetail({
 }: ProposalDetailProps) {
   const eventDate = formatProposalDate(proposal.event_start);
   const scheduled = isScheduled(proposal);
+  const fixed = isFixed(proposal);
+  // Tentative: bereits im Slot, aber noch nicht final.
+  const tentative = scheduled && !fixed;
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -135,13 +140,13 @@ export function ProposalDetail({
         onClick={onClose}
       />
       <div className="relative z-10 flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-h-[88vh] sm:rounded-3xl">
-        <div className="relative h-44 w-full overflow-hidden bg-gradient-to-br from-amber-200 via-orange-200 to-sky-200 sm:h-56">
+        <div className="relative aspect-[16/9] w-full overflow-hidden bg-gradient-to-br from-amber-200 via-orange-200 to-sky-200">
           {proposal.image_path ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={proposal.image_path}
               alt={proposal.title}
-              className="h-full w-full object-cover"
+              className="h-full w-full object-cover object-center"
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-white/90">
@@ -157,18 +162,26 @@ export function ProposalDetail({
             <X size={18} />
           </button>
           <div className="absolute left-3 top-3 flex flex-wrap items-center gap-2">
-            <span
-              className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${PROPOSAL_STATUS_BADGE[proposal.status]}`}
-            >
-              {PROPOSAL_STATUS_LABELS[proposal.status]}
-            </span>
-            {!scheduled && (
+            {fixed ? (
+              <span
+                className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${PROPOSAL_STATUS_BADGE[proposal.status]}`}
+              >
+                {PROPOSAL_STATUS_LABELS[proposal.status]}
+              </span>
+            ) : (
               <span className="inline-flex items-center rounded-full bg-white/85 px-2.5 py-1 text-xs font-medium text-slate-700 backdrop-blur">
-                Noch nicht eingeplant
+                {tentative ? "Vorgemerkt" : "Noch nicht eingeplant"}
               </span>
             )}
             {scheduled && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-white/85 px-2.5 py-1 text-xs font-medium text-sky-800 backdrop-blur">
+              <span
+                className={
+                  "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium backdrop-blur " +
+                  (fixed
+                    ? "bg-white/85 text-sky-800"
+                    : "bg-white/85 text-slate-600")
+                }
+              >
                 <CalendarRange size={12} />
                 {formatTripDay(proposal.scheduled_day as string)}
                 {" · "}
@@ -190,8 +203,24 @@ export function ProposalDetail({
             <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
               {proposal.title}
             </h2>
+            {(proposal.location_area || proposal.category) && (
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {proposal.location_area && (
+                  <span
+                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${LOCATION_AREA_BADGE[proposal.location_area] ?? "bg-slate-50 text-slate-700 ring-slate-200"}`}
+                  >
+                    {proposal.location_area}
+                  </span>
+                )}
+                {proposal.category && (
+                  <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                    {proposal.category}
+                  </span>
+                )}
+              </div>
+            )}
             {proposal.short_description && (
-              <p className="mt-1 text-sm text-slate-600">
+              <p className="mt-2 text-sm text-slate-600">
                 {proposal.short_description}
               </p>
             )}
@@ -238,7 +267,21 @@ export function ProposalDetail({
             </section>
           )}
 
-          {scheduled ? (
+          {proposal.source_url && (
+            <p className="text-xs text-slate-500">
+              Quelle:{" "}
+              <a
+                href={proposal.source_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-sky-700 underline hover:text-sky-800"
+              >
+                {prettyHost(proposal.source_url)}
+              </a>
+            </p>
+          )}
+
+          {fixed ? (
             <>
               <section className="rounded-2xl bg-emerald-50 px-4 py-4 ring-1 ring-emerald-200">
                 <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-emerald-900">
@@ -273,9 +316,9 @@ export function ProposalDetail({
                 Wer findet das interessant?
               </h3>
               <p className="mb-3 text-sm text-amber-900/80">
-                Diese Idee ist noch nicht fest eingeplant. Wenn dich das
-                interessiert, markiere sie &ndash; daraus kann spaeter eine
-                Gruppe entstehen.
+                {tentative
+                  ? "Slot ist vorgemerkt, aber noch nicht fix. Zeit und Treffpunkt werden noch abgestimmt."
+                  : "Diese Idee ist noch nicht fest eingeplant. Wenn dich das interessiert, markiere sie – daraus kann spaeter eine Gruppe entstehen."}
               </p>
               <ProposalAttendees
                 participants={interestedParticipants}
@@ -291,9 +334,9 @@ export function ProposalDetail({
           {!currentParticipantId ? (
             <p className="text-sm text-slate-600">
               Bitte speichere zuerst deinen Namen, um{" "}
-              {scheduled ? "abzustimmen" : "Interesse zu zeigen"}.
+              {fixed ? "abzustimmen" : "Interesse zu zeigen"}.
             </p>
-          ) : scheduled ? (
+          ) : fixed ? (
             <>
               <p className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500">
                 Deine Teilnahme gilt fuer diesen geplanten Zeitraum.
@@ -335,8 +378,9 @@ export function ProposalDetail({
           ) : (
             <>
               <p className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500">
-                Zeig Interesse, damit der Admin sieht, ob sich eine Gruppe
-                lohnt.
+                {tentative
+                  ? "Zeit und Slot werden noch abgestimmt. Zeig solange Interesse – das finale Voting kommt, sobald es fix ist."
+                  : "Zeig Interesse, damit der Admin sieht, ob sich eine Gruppe lohnt."}
               </p>
               <button
                 type="button"
@@ -369,6 +413,15 @@ export function ProposalDetail({
       </div>
     </div>
   );
+}
+
+function prettyHost(url: string): string {
+  try {
+    const u = new URL(url);
+    return u.hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
 }
 
 function InfoRow({

@@ -6,6 +6,7 @@ import {
   PROPOSAL_SLOT_OPTIONS,
   TRIP_DAYS,
   formatTripDay,
+  isFixed,
   isScheduled,
   type EventProposal,
   type ProposalSlot,
@@ -26,6 +27,7 @@ type GroupPlanProps = {
   proposals: EventProposal[];
   countsByProposal: Map<string, Counts>;
   myVoteByProposal: Map<string, EventVoteChoice>;
+  interestCounts: Map<string, number>;
   onOpenProposal: (proposalId: string) => void;
 };
 
@@ -33,6 +35,7 @@ export function GroupPlan({
   proposals,
   countsByProposal,
   myVoteByProposal,
+  interestCounts,
   onOpenProposal,
 }: GroupPlanProps) {
   const scheduled = proposals.filter(isScheduled);
@@ -55,10 +58,14 @@ export function GroupPlan({
     list.push(p);
   }
 
-  // Innerhalb eines Slots nach event_start, dann sort_order, dann title.
+  // Innerhalb eines Slots: fixe Events zuerst, dann vorgemerkte;
+  // gleich-priorisiert weiter nach event_start, sort_order, title.
   for (const slotMap of byDayAndSlot.values()) {
     for (const list of slotMap.values()) {
       list.sort((a, b) => {
+        const aFixed = isFixed(a) ? 0 : 1;
+        const bFixed = isFixed(b) ? 0 : 1;
+        if (aFixed !== bFixed) return aFixed - bFixed;
         if (a.event_start && b.event_start) {
           return a.event_start.localeCompare(b.event_start);
         }
@@ -80,8 +87,9 @@ export function GroupPlan({
             Unser Gruppenplan
           </h2>
           <p className="text-sm text-slate-600">
-            Was sich pro Tag und Tageszeit zusammenfindet. Alles kann,
-            nichts muss.
+            Was sich pro Tag und Tageszeit zusammenfindet. Vorgemerktes
+            erscheint gedaempft, Fixes farbig &ndash; erst dort gibt&apos;s die
+            finale Abstimmung.
           </p>
         </div>
       </header>
@@ -119,6 +127,7 @@ export function GroupPlan({
                       proposals={items}
                       countsByProposal={countsByProposal}
                       myVoteByProposal={myVoteByProposal}
+                      interestCounts={interestCounts}
                       onOpenProposal={onOpenProposal}
                     />
                   );
@@ -137,6 +146,7 @@ type DaySlotProps = {
   proposals: EventProposal[];
   countsByProposal: Map<string, Counts>;
   myVoteByProposal: Map<string, EventVoteChoice>;
+  interestCounts: Map<string, number>;
   onOpenProposal: (proposalId: string) => void;
 };
 
@@ -145,9 +155,12 @@ function DaySlot({
   proposals,
   countsByProposal,
   myVoteByProposal,
+  interestCounts,
   onOpenProposal,
 }: DaySlotProps) {
   const isEmpty = proposals.length === 0;
+  const fixedCount = proposals.filter(isFixed).length;
+  const tentativeCount = proposals.length - fixedCount;
 
   return (
     <div className="px-5 py-4">
@@ -157,17 +170,27 @@ function DaySlot({
         </span>
         {!isEmpty && (
           <span className="text-xs text-slate-500">
-            {proposals.length}{" "}
-            {proposals.length === 1 ? "Idee" : "Ideen"}
+            {fixedCount > 0 && (
+              <span className="font-medium text-emerald-700">
+                {fixedCount} fix
+              </span>
+            )}
+            {fixedCount > 0 && tentativeCount > 0 && " · "}
+            {tentativeCount > 0 && (
+              <span>{tentativeCount} vorgemerkt</span>
+            )}
           </span>
         )}
       </div>
 
       {isEmpty ? (
-        <div className="rounded-2xl border border-dashed border-slate-200 bg-stone-50 px-4 py-4 text-center">
-          <p className="text-sm text-slate-500">
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-stone-50/70 px-4 py-5 text-center">
+          <p className="text-sm font-medium text-slate-500">
             <span className="hidden sm:inline">Noch nichts geplant.</span>
             <span className="sm:hidden">Noch offen.</span>
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
+            Sobald sich Interesse zeigt, kann hier etwas vorgemerkt werden.
           </p>
         </div>
       ) : (
@@ -179,6 +202,7 @@ function DaySlot({
                 maybe: 0,
                 out: 0,
               };
+            const tentative = !isFixed(proposal);
             return (
               <ProposalCard
                 key={proposal.id}
@@ -186,7 +210,13 @@ function DaySlot({
                 inParticipants={c.inParticipants}
                 maybeCount={c.maybe}
                 outCount={c.out}
-                myVote={myVoteByProposal.get(proposal.id) ?? null}
+                myVote={
+                  tentative
+                    ? null
+                    : (myVoteByProposal.get(proposal.id) ?? null)
+                }
+                tentative={tentative}
+                interestCount={interestCounts.get(proposal.id) ?? 0}
                 compact
                 onOpen={() => onOpenProposal(proposal.id)}
               />

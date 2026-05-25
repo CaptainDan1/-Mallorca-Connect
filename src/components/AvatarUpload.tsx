@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Camera, Loader2 } from "lucide-react";
 import {
   AVATAR_ALLOWED_MIME_TYPES,
@@ -12,12 +12,20 @@ type AvatarUploadProps = {
   participantId: string;
   disabled?: boolean;
   onUploaded: (publicUrl: string) => Promise<void> | void;
+  /** Wenn gesetzt, wird der Inhalt klickbar gemacht und der Trigger
+   *  rendert sich nicht als eigenstaendiger Button mit Beschriftung,
+   *  sondern nur als Hot-Spot um den Avatar. */
+  children?: ReactNode;
+  /** Visuelles Label fuer den Trigger (nur ohne `children`). */
+  label?: string;
 };
 
 export function AvatarUpload({
   participantId,
   disabled,
   onUploaded,
+  children,
+  label = "Profilfoto hochladen",
 }: AvatarUploadProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -56,6 +64,52 @@ export function AvatarUpload({
     }
   }
 
+  // Variante 1: Avatar selbst als Trigger (children gegeben).
+  if (children) {
+    return (
+      <>
+        <input
+          ref={inputRef}
+          type="file"
+          accept={acceptAttr}
+          className="hidden"
+          onChange={handleChange}
+          disabled={disabled || isUploading}
+        />
+        <button
+          type="button"
+          onClick={openPicker}
+          disabled={disabled || isUploading}
+          aria-label={label}
+          className="group relative inline-flex items-center justify-center rounded-2xl focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {children}
+          <span
+            className={
+              "pointer-events-none absolute inset-0 flex items-center justify-center rounded-2xl bg-black/45 text-white transition " +
+              (isUploading
+                ? "opacity-100"
+                : "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100")
+            }
+            aria-hidden="true"
+          >
+            {isUploading ? (
+              <Loader2 size={18} className="animate-spin" />
+            ) : (
+              <Camera size={18} />
+            )}
+          </span>
+        </button>
+        {error && (
+          <p role="alert" className="mt-2 text-xs text-rose-700">
+            {error}
+          </p>
+        )}
+      </>
+    );
+  }
+
+  // Variante 2 (Fallback / Legacy): klassischer Button + Hinweis.
   return (
     <div className="space-y-2">
       <input
@@ -77,11 +131,8 @@ export function AvatarUpload({
         ) : (
           <Camera size={14} />
         )}
-        {isUploading ? "Lade hoch..." : "Profilfoto hochladen"}
+        {isUploading ? "Lade hoch..." : label}
       </button>
-      <p className="text-xs text-slate-500">
-        JPG, PNG oder WebP, bis 2 MB.
-      </p>
       {error && (
         <p role="alert" className="text-xs text-rose-700">
           {error}

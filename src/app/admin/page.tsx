@@ -322,13 +322,21 @@ export default function AdminPage() {
               ? "Lade Vorschlaege..."
               : `${counts.all} Vorschlag${counts.all === 1 ? "" : "e"} insgesamt, ${counts.pending} warten auf Freigabe.`}
           </p>
-          <Link
-            href="/admin/new"
-            className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2.5 text-sm font-semibold text-white shadow-soft transition active:scale-[0.99] hover:from-amber-500 hover:to-orange-600"
-          >
-            <Plus size={16} />
-            Neuer Vorschlag
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/admin/import"
+              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 shadow-soft transition hover:bg-slate-50"
+            >
+              Importieren
+            </Link>
+            <Link
+              href="/admin/new"
+              className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2.5 text-sm font-semibold text-white shadow-soft transition active:scale-[0.99] hover:from-amber-500 hover:to-orange-600"
+            >
+              <Plus size={16} />
+              Neuer Vorschlag
+            </Link>
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-2">
