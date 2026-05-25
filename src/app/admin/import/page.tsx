@@ -149,11 +149,7 @@ export default function AdminImportPage() {
       setSuccessCount(inserted.length);
       setPhase("done");
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Import hat leider nicht geklappt.";
-      setSaveError(message);
+      setSaveError(formatImportError(error));
       setPhase("preview");
     }
   }
@@ -559,6 +555,54 @@ function PreviewRow({ row }: PreviewRowProps) {
       </div>
     </li>
   );
+}
+
+// Liest aus dem Supabase-Fehlerobjekt alle nuetzlichen Felder aus
+// (message, details, hint, code) und ergaenzt eine Empfehlung, falls es
+// nach fehlender Spalte / kaltem Schema-Cache aussieht. So sieht der
+// Admin in der UI sofort, was zu tun ist (z.B. Migration ausfuehren).
+function formatImportError(error: unknown): string {
+  if (!error || typeof error !== "object") {
+    return "Import hat leider nicht geklappt.";
+  }
+  const e = error as {
+    message?: unknown;
+    details?: unknown;
+    hint?: unknown;
+    code?: unknown;
+  };
+  const parts: string[] = [];
+  if (typeof e.message === "string" && e.message.trim()) {
+    parts.push(e.message.trim());
+  }
+  if (typeof e.details === "string" && e.details.trim()) {
+    parts.push(`Details: ${e.details.trim()}`);
+  }
+  if (typeof e.hint === "string" && e.hint.trim()) {
+    parts.push(`Hinweis: ${e.hint.trim()}`);
+  }
+  if (typeof e.code === "string" && e.code.trim()) {
+    parts.push(`Code: ${e.code.trim()}`);
+  }
+  if (parts.length === 0) {
+    parts.push("Import hat leider nicht geklappt.");
+  }
+  const fingerprint = parts.join(" ").toLowerCase();
+  // Klassische PostgREST-Symptome bei fehlender Spalte: "column ... does
+  // not exist", "could not find the 'tags' column", "schema cache".
+  const looksLikeMissingColumn =
+    /column\s+["']?(tags|category|location_area|source_url)["']?/i.test(
+      fingerprint,
+    ) ||
+    /could not find.*column/i.test(fingerprint) ||
+    /schema cache/i.test(fingerprint) ||
+    /pgrst\d+/i.test(fingerprint);
+  if (looksLikeMissingColumn) {
+    parts.push(
+      "Bitte 00 Documentation/supabase/add-import-metadata.sql im Supabase SQL-Editor ausfuehren und Import erneut versuchen.",
+    );
+  }
+  return `Import fehlgeschlagen: ${parts.join(" — ")}`;
 }
 
 function KV({ label, value }: { label: string; value: React.ReactNode }) {
