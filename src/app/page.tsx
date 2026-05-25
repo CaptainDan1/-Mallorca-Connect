@@ -1,42 +1,126 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { Loader2, Sparkles } from "lucide-react";
 import { HeroSection } from "@/components/HeroSection";
-import { VoteForm } from "@/components/VoteForm";
-import { CrewList } from "@/components/CrewList";
+import { ProfileCard } from "@/components/ProfileCard";
+import { ProposalCard } from "@/components/ProposalCard";
+import { ProposalDetail } from "@/components/ProposalDetail";
 import { Toast, type ToastVariant } from "@/components/Toast";
-import { useVotes } from "@/hooks/useVotes";
+import { useParticipant } from "@/hooks/useParticipant";
+import { useProposalsPublic } from "@/hooks/useProposalsPublic";
+import {
+  VOTE_LABELS,
+  type EventVoteChoice,
+  type ParticipantProfile,
+} from "@/lib/participants";
 
 type ToastState = { message: string; variant: ToastVariant } | null;
 
 export default function HomePage() {
   const {
+    participant,
+    isLoading: profileLoading,
+    isSaving: profileSaving,
+    loadError: profileLoadError,
+    saveError: profileSaveError,
+    saveProfile,
+  } = useParticipant();
+
+  const {
+    proposals,
     votes,
-    isLoading,
-    isSaving,
-    loadError,
-    saveError,
+    participants,
+    isLoading: proposalsLoading,
+    loadError: proposalsLoadError,
     isConfigured,
-    saveVote,
-  } = useVotes();
+    voteOn,
+    votingFor,
+    voteError,
+  } = useProposalsPublic();
+
+  const [openProposalId, setOpenProposalId] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
 
-  async function handleSubmit(input: Parameters<typeof saveVote>[0]) {
-    const result = await saveVote(input);
-    if (result) {
-      setToast({
-        message: "Deine Auswahl ist gespeichert.",
-        variant: "success",
-      });
-    } else {
-      setToast({
-        message:
-          saveError ||
-          "Das hat leider nicht geklappt. Bitte versuche es noch einmal.",
-        variant: "error",
-      });
+  const participantsById = useMemo(() => {
+    const map = new Map<string, ParticipantProfile>();
+    for (const p of participants) map.set(p.id, p);
+    if (participant && !map.has(participant.id)) {
+      map.set(participant.id, participant);
     }
-  }
+    return map;
+  }, [participants, participant]);
+
+  const counts = useMemo(() => {
+    const result = new Map<
+      string,
+      { in: number; maybe: number; out: number }
+    >();
+    for (const proposal of proposals) {
+      result.set(proposal.id, { in: 0, maybe: 0, out: 0 });
+    }
+    for (const v of votes) {
+      const bucket = result.get(v.proposal_id);
+      if (!bucket) continue;
+      bucket[v.vote] += 1;
+    }
+    return result;
+  }, [proposals, votes]);
+
+  const openProposal = useMemo(
+    () => proposals.find((p) => p.id === openProposalId) ?? null,
+    [proposals, openProposalId],
+  );
+
+  const handleProfileSubmit = useCallback(
+    async (input: { display_name: string; hotel_info: string | null }) => {
+      const result = await saveProfile(input);
+      if (result) {
+        setToast({
+          message: "Profil gespeichert.",
+          variant: "success",
+        });
+      } else {
+        setToast({
+          message:
+            profileSaveError ||
+            "Profil konnte nicht gespeichert werden. Bitte versuche es noch einmal.",
+          variant: "error",
+        });
+      }
+    },
+    [saveProfile, profileSaveError],
+  );
+
+  const handleVote = useCallback(
+    async (proposalId: string, vote: EventVoteChoice) => {
+      if (!participant) {
+        setToast({
+          message: "Bitte speichere zuerst deinen Namen.",
+          variant: "error",
+        });
+        return;
+      }
+      const ok = await voteOn(proposalId, participant.id, vote);
+      if (ok) {
+        setToast({
+          message: `Gespeichert: ${VOTE_LABELS[vote]}.`,
+          variant: "success",
+        });
+      } else {
+        setToast({
+          message:
+            voteError ||
+            "Stimme konnte nicht gespeichert werden. Bitte versuche es noch einmal.",
+          variant: "error",
+        });
+      }
+    },
+    [participant, voteOn, voteError],
+  );
+
+  const everythingEmpty =
+    !proposalsLoading && proposals.length === 0 && !proposalsLoadError;
 
   return (
     <main className="min-h-screen bg-stone-50">
@@ -54,23 +138,97 @@ export default function HomePage() {
           </div>
         )}
 
-        <VoteForm
-          onSubmit={handleSubmit}
-          isSaving={isSaving}
-          errorMessage={saveError}
+        <ProfileCard
+          participant={participant}
+          isLoading={profileLoading}
+          isSaving={profileSaving}
+          loadError={profileLoadError}
+          saveError={profileSaveError}
           disabled={!isConfigured}
+          onSubmit={handleProfileSubmit}
         />
 
-        <CrewList
-          votes={votes}
-          isLoading={isLoading}
-          errorMessage={loadError}
-        />
+        <section className="space-y-3">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-semibold tracking-tight text-slate-900">
+                Aktuelle Vorschlaege
+              </h2>
+              <p className="text-sm text-slate-600">
+                Tipp auf eine Karte fuer Details und Abstimmung.
+              </p>
+            </div>
+            {votingFor && (
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-sky-700">
+                <Loader2 size={12} className="animate-spin" />
+                Speichere Stimme...
+              </span>
+            )}
+          </div>
+
+          {proposalsLoadError && (
+            <div
+              role="alert"
+              className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"
+            >
+              {proposalsLoadError}
+            </div>
+          )}
+
+          {proposalsLoading && (
+            <div className="flex items-center gap-2 rounded-3xl bg-white px-5 py-6 text-sm text-slate-600 shadow-soft">
+              <Loader2 size={16} className="animate-spin" />
+              Lade Vorschlaege...
+            </div>
+          )}
+
+          {everythingEmpty && (
+            <div className="rounded-3xl border border-dashed border-slate-200 bg-white px-6 py-10 text-center shadow-soft">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-soft">
+                <Sparkles size={20} />
+              </div>
+              <p className="text-base font-medium text-slate-700">
+                Noch keine Vorschlaege.
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                Sobald jemand einen Vorschlag anlegt, taucht er hier auf.
+              </p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {proposals.map((proposal) => {
+              const c = counts.get(proposal.id) ?? { in: 0, maybe: 0, out: 0 };
+              return (
+                <ProposalCard
+                  key={proposal.id}
+                  proposal={proposal}
+                  inCount={c.in}
+                  maybeCount={c.maybe}
+                  onOpen={() => setOpenProposalId(proposal.id)}
+                />
+              );
+            })}
+          </div>
+        </section>
 
         <footer className="pt-4 text-center text-xs text-slate-400">
           Mallorca-Connect &middot; Alles kann, nichts muss.
         </footer>
       </div>
+
+      {openProposal && (
+        <ProposalDetail
+          proposal={openProposal}
+          votes={votes}
+          participantsById={participantsById}
+          currentParticipantId={participant?.id ?? null}
+          isVoting={votingFor === openProposal.id}
+          voteError={voteError}
+          onClose={() => setOpenProposalId(null)}
+          onVote={handleVote}
+        />
+      )}
 
       {toast && (
         <Toast
