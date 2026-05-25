@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { Loader2, MessageSquarePlus } from "lucide-react";
 import { HeroSection } from "@/components/HeroSection";
+import { WelcomeCard } from "@/components/WelcomeCard";
 import { ProfileCard } from "@/components/ProfileCard";
 import { ActivityDiscovery } from "@/components/ActivityDiscovery";
 import { GroupPlan } from "@/components/GroupPlan";
@@ -277,6 +278,8 @@ export default function HomePage() {
             </p>
           </div>
         )}
+
+        <WelcomeCard />
 
         <ProfileCard
           participant={participant}
