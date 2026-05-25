@@ -8,15 +8,20 @@ import { ProposalForm } from "@/components/ProposalForm";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 import {
   EVENT_PROPOSALS_TABLE,
+  type EventProposal,
   type EventProposalInput,
 } from "@/lib/proposals";
+import { uploadEventImage } from "@/lib/storage";
 
 export default function NewProposalPage() {
   const router = useRouter();
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  async function handleSubmit(values: EventProposalInput) {
+  async function handleSubmit(
+    values: EventProposalInput,
+    file: File | null,
+  ) {
     if (!isSupabaseConfigured()) {
       setErrorMessage(
         "Supabase ist nicht konfiguriert. Bitte erst die Environment-Variablen setzen.",
@@ -28,10 +33,23 @@ export default function NewProposalPage() {
     setErrorMessage(null);
     try {
       const supabase = getSupabaseClient();
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from(EVENT_PROPOSALS_TABLE)
-        .insert(values);
+        .insert(values)
+        .select("id")
+        .single();
       if (error) throw error;
+      const inserted = data as Pick<EventProposal, "id"> | null;
+
+      if (file && inserted?.id) {
+        const { publicUrl } = await uploadEventImage(inserted.id, file);
+        const { error: updateError } = await supabase
+          .from(EVENT_PROPOSALS_TABLE)
+          .update({ image_path: publicUrl })
+          .eq("id", inserted.id);
+        if (updateError) throw updateError;
+      }
+
       router.replace("/admin");
       router.refresh();
     } catch (error) {

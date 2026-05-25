@@ -1,23 +1,25 @@
 "use client";
 
-import { CalendarClock, MapPin, Sparkles, Users } from "lucide-react";
+import { CalendarClock, MapPin, Sparkles } from "lucide-react";
 import {
   PROPOSAL_STATUS_BADGE,
   PROPOSAL_STATUS_LABELS,
   formatProposalDate,
   type EventProposal,
 } from "@/lib/proposals";
+import type { ParticipantProfile } from "@/lib/participants";
+import { ProposalAttendees } from "@/components/ProposalAttendees";
 
 type ProposalCardProps = {
   proposal: EventProposal;
-  inCount: number;
+  inParticipants: ParticipantProfile[];
   maybeCount: number;
   onOpen: () => void;
 };
 
 export function ProposalCard({
   proposal,
-  inCount,
+  inParticipants,
   maybeCount,
   onOpen,
 }: ProposalCardProps) {
@@ -81,17 +83,22 @@ export function ProposalCard({
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-2 pt-1">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800 ring-1 ring-emerald-200">
-            <Users size={12} />
-            {inCount} dabei
-          </span>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800 ring-1 ring-amber-200">
-            {maybeCount} vielleicht
-          </span>
-          <span className="ml-auto text-xs font-medium text-sky-700 group-hover:text-sky-800">
-            Details ansehen &rarr;
-          </span>
+        <div className="pt-1">
+          <ProposalAttendees
+            participants={inParticipants}
+            maxAvatars={4}
+            size="sm"
+          />
+          <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+            <span>
+              {maybeCount > 0
+                ? `+ ${maybeCount} vielleicht`
+                : "Keine vielleicht-Stimmen"}
+            </span>
+            <span className="font-medium text-sky-700 group-hover:text-sky-800">
+              Details ansehen &rarr;
+            </span>
+          </div>
         </div>
       </div>
     </button>

@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Loader2, Save } from "lucide-react";
 import {
+  PROPOSAL_MODERATION_LABELS,
+  PROPOSAL_MODERATION_OPTIONS,
   PROPOSAL_STATUS_LABELS,
   PROPOSAL_STATUS_OPTIONS,
   emptyProposalInput,
@@ -10,15 +12,20 @@ import {
   toLocalDatetimeInputValue,
   trimOrNull,
   type EventProposalInput,
+  type ProposalModerationStatus,
   type ProposalStatus,
 } from "@/lib/proposals";
+import { ProposalImagePicker } from "@/components/ProposalImagePicker";
 
 type ProposalFormProps = {
   initialValues?: EventProposalInput;
   submitLabel?: string;
   isSaving: boolean;
   errorMessage: string | null;
-  onSubmit: (values: EventProposalInput) => Promise<void> | void;
+  onSubmit: (
+    values: EventProposalInput,
+    file: File | null,
+  ) => Promise<void> | void;
 };
 
 export function ProposalForm({
@@ -45,8 +52,11 @@ export function ProposalForm({
   const [costNote, setCostNote] = useState(base.cost_note ?? "");
   const [imagePath, setImagePath] = useState(base.image_path ?? "");
   const [status, setStatus] = useState<ProposalStatus>(base.status);
+  const [moderationStatus, setModerationStatus] =
+    useState<ProposalModerationStatus>(base.moderation_status);
   const [isActive, setIsActive] = useState(base.is_active);
   const [sortOrder, setSortOrder] = useState<number>(base.sort_order);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   const [titleError, setTitleError] = useState<string | null>(null);
 
@@ -71,11 +81,12 @@ export function ProposalForm({
       cost_note: trimOrNull(costNote),
       image_path: trimOrNull(imagePath),
       status,
+      moderation_status: moderationStatus,
       is_active: isActive,
       sort_order: Number.isFinite(sortOrder) ? sortOrder : 0,
     };
 
-    void onSubmit(payload);
+    void onSubmit(payload, pendingFile);
   }
 
   const inputClass =
@@ -198,8 +209,18 @@ export function ProposalForm({
       </div>
 
       <div>
+        <span className={labelClass}>Event-Foto</span>
+        <ProposalImagePicker
+          currentImagePath={base.image_path ?? null}
+          disabled={isSaving}
+          onFileChange={setPendingFile}
+          isUploading={isSaving && pendingFile != null}
+        />
+      </div>
+
+      <div>
         <label htmlFor="image_path" className={labelClass}>
-          Bildpfad oder Bild-URL
+          Bildpfad oder Bild-URL (optional)
         </label>
         <input
           id="image_path"
@@ -211,15 +232,15 @@ export function ProposalForm({
           disabled={isSaving}
         />
         <p className="mt-1 text-xs text-slate-500">
-          Lokale Bilder unter <code>public/images/events/</code>. Externe
-          URLs muessen in <code>next.config.mjs</code> erlaubt sein.
+          Wird vom Upload oben automatisch ueberschrieben, sobald ein
+          neues Foto hochgeladen wurde.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label htmlFor="status" className={labelClass}>
-            Status
+            Event-Status
           </label>
           <select
             id="status"
@@ -236,6 +257,32 @@ export function ProposalForm({
           </select>
         </div>
 
+        <div>
+          <label htmlFor="moderation_status" className={labelClass}>
+            Freigabe
+          </label>
+          <select
+            id="moderation_status"
+            value={moderationStatus}
+            onChange={(e) =>
+              setModerationStatus(e.target.value as ProposalModerationStatus)
+            }
+            className={inputClass}
+            disabled={isSaving}
+          >
+            {PROPOSAL_MODERATION_OPTIONS.map((opt) => (
+              <option key={opt} value={opt}>
+                {PROPOSAL_MODERATION_LABELS[opt]}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-slate-500">
+            Nur freigegebene Vorschlaege erscheinen oeffentlich.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label htmlFor="sort_order" className={labelClass}>
             Sortierung

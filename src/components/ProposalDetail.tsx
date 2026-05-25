@@ -25,6 +25,7 @@ import {
   type ParticipantProfile,
 } from "@/lib/participants";
 import { avatarGradient, getInitials } from "@/lib/utils";
+import { ProposalAttendees } from "@/components/ProposalAttendees";
 
 type ProposalDetailProps = {
   proposal: EventProposal;
@@ -49,16 +50,13 @@ export function ProposalDetail({
 }: ProposalDetailProps) {
   const eventDate = formatProposalDate(proposal.event_start);
 
-  // ESC schliesst.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
     }
     document.addEventListener("keydown", onKey);
-
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = previousOverflow;
@@ -78,6 +76,24 @@ export function ProposalDetail({
     }
     return result;
   }, [votes, proposal.id]);
+
+  const inParticipants = useMemo(() => {
+    return grouped.in
+      .map((v) => participantsById.get(v.participant_id))
+      .filter((p): p is ParticipantProfile => Boolean(p));
+  }, [grouped.in, participantsById]);
+
+  const maybeParticipants = useMemo(() => {
+    return grouped.maybe
+      .map((v) => participantsById.get(v.participant_id))
+      .filter((p): p is ParticipantProfile => Boolean(p));
+  }, [grouped.maybe, participantsById]);
+
+  const outParticipants = useMemo(() => {
+    return grouped.out
+      .map((v) => participantsById.get(v.participant_id))
+      .filter((p): p is ParticipantProfile => Boolean(p));
+  }, [grouped.out, participantsById]);
 
   const myVote = useMemo<EventVoteChoice | null>(() => {
     if (!currentParticipantId) return null;
@@ -177,32 +193,31 @@ export function ProposalDetail({
             </section>
           )}
 
-          <section>
-            <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+          <section className="rounded-2xl bg-emerald-50 px-4 py-4 ring-1 ring-emerald-200">
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-emerald-900">
               <Users size={14} />
               Wer ist dabei?
             </h3>
-            <div className="space-y-4">
-              <VoteBucket
-                title="Bin dabei"
-                tone="emerald"
-                votes={grouped.in}
-                participantsById={participantsById}
-              />
-              <VoteBucket
-                title="Vielleicht"
-                tone="amber"
-                votes={grouped.maybe}
-                participantsById={participantsById}
-              />
-              <VoteBucket
-                title="Bin raus"
-                tone="slate"
-                votes={grouped.out}
-                participantsById={participantsById}
-              />
-            </div>
+            <ProposalAttendees
+              participants={inParticipants}
+              maxAvatars={8}
+              size="lg"
+              emptyText="Noch niemand dabei. Mach den Anfang."
+            />
           </section>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <SmallBucket
+              title="Vielleicht"
+              tone="amber"
+              participants={maybeParticipants}
+            />
+            <SmallBucket
+              title="Bin raus"
+              tone="slate"
+              participants={outParticipants}
+            />
+          </div>
         </div>
 
         <footer className="border-t border-slate-100 bg-stone-50 px-5 py-4 sm:px-7">
@@ -278,62 +293,57 @@ function InfoRow({
   );
 }
 
-function VoteBucket({
+function SmallBucket({
   title,
   tone,
-  votes,
-  participantsById,
+  participants,
 }: {
   title: string;
-  tone: "emerald" | "amber" | "slate";
-  votes: EventVote[];
-  participantsById: Map<string, ParticipantProfile>;
+  tone: "amber" | "slate";
+  participants: ParticipantProfile[];
 }) {
   const toneClasses =
-    tone === "emerald"
-      ? "bg-emerald-50 text-emerald-900 ring-emerald-200"
-      : tone === "amber"
-        ? "bg-amber-50 text-amber-900 ring-amber-200"
-        : "bg-slate-100 text-slate-700 ring-slate-200";
+    tone === "amber"
+      ? "bg-amber-50 text-amber-900 ring-amber-200"
+      : "bg-slate-100 text-slate-700 ring-slate-200";
 
   return (
     <div className={`rounded-2xl px-4 py-3 ring-1 ${toneClasses}`}>
       <div className="mb-2 flex items-center justify-between">
-        <p className="text-sm font-semibold">{title}</p>
+        <p className="text-xs font-semibold uppercase tracking-wide">
+          {title}
+        </p>
         <span className="text-xs font-medium opacity-80">
-          {votes.length}
+          {participants.length}
         </span>
       </div>
-      {votes.length === 0 ? (
+      {participants.length === 0 ? (
         <p className="text-xs opacity-70">Noch niemand.</p>
       ) : (
         <ul className="flex flex-wrap gap-2">
-          {votes.map((v) => {
-            const p = participantsById.get(v.participant_id);
-            const name = p?.display_name ?? "Unbekannt";
-            const gradient = avatarGradient(name);
-            const avatarUrl = p?.avatar_url ?? null;
+          {participants.map((p) => {
+            const gradient = avatarGradient(p.display_name);
             return (
               <li
-                key={v.id}
-                className="inline-flex items-center gap-2 rounded-full bg-white px-2.5 py-1 ring-1 ring-black/5"
+                key={p.id}
+                className="inline-flex items-center gap-2 rounded-full bg-white px-2 py-0.5 ring-1 ring-black/5"
               >
                 <span
-                  className={`flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${gradient} text-[10px] font-semibold text-white`}
+                  className={`flex h-5 w-5 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${gradient} text-[9px] font-semibold text-white`}
                 >
-                  {avatarUrl ? (
+                  {p.avatar_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={avatarUrl}
-                      alt={name}
+                      src={p.avatar_url}
+                      alt={p.display_name}
                       className="h-full w-full object-cover"
                     />
                   ) : (
-                    getInitials(name)
+                    getInitials(p.display_name)
                   )}
                 </span>
                 <span className="text-xs font-medium text-slate-800">
-                  {name}
+                  {p.display_name}
                 </span>
               </li>
             );

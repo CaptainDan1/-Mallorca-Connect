@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Loader2, Sparkles } from "lucide-react";
+import { Loader2, MessageSquarePlus, Sparkles } from "lucide-react";
 import { HeroSection } from "@/components/HeroSection";
 import { ProfileCard } from "@/components/ProfileCard";
 import { ProposalCard } from "@/components/ProposalCard";
 import { ProposalDetail } from "@/components/ProposalDetail";
+import { SuggestProposalModal } from "@/components/SuggestProposalModal";
 import { Toast, type ToastVariant } from "@/components/Toast";
 import { useParticipant } from "@/hooks/useParticipant";
 import { useProposalsPublic } from "@/hooks/useProposalsPublic";
@@ -37,12 +38,14 @@ export default function HomePage() {
     isLoading: proposalsLoading,
     loadError: proposalsLoadError,
     isConfigured,
+    reload,
     voteOn,
     votingFor,
     voteError,
   } = useProposalsPublic();
 
   const [openProposalId, setOpenProposalId] = useState<string | null>(null);
+  const [isSuggestOpen, setIsSuggestOpen] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
 
   const participantsById = useMemo(() => {
@@ -54,21 +57,27 @@ export default function HomePage() {
     return map;
   }, [participants, participant]);
 
-  const counts = useMemo(() => {
-    const result = new Map<
-      string,
-      { in: number; maybe: number; out: number }
-    >();
+  type Counts = { inParticipants: ParticipantProfile[]; maybe: number; out: number };
+
+  const perProposal = useMemo(() => {
+    const result = new Map<string, Counts>();
     for (const proposal of proposals) {
-      result.set(proposal.id, { in: 0, maybe: 0, out: 0 });
+      result.set(proposal.id, { inParticipants: [], maybe: 0, out: 0 });
     }
     for (const v of votes) {
       const bucket = result.get(v.proposal_id);
       if (!bucket) continue;
-      bucket[v.vote] += 1;
+      if (v.vote === "in") {
+        const p = participantsById.get(v.participant_id);
+        if (p) bucket.inParticipants.push(p);
+      } else if (v.vote === "maybe") {
+        bucket.maybe += 1;
+      } else {
+        bucket.out += 1;
+      }
     }
     return result;
-  }, [proposals, votes]);
+  }, [proposals, votes, participantsById]);
 
   const openProposal = useMemo(
     () => proposals.find((p) => p.id === openProposalId) ?? null,
@@ -142,6 +151,27 @@ export default function HomePage() {
     [participant, voteOn, voteError],
   );
 
+  function handleOpenSuggest() {
+    if (!participant) {
+      setToast({
+        message:
+          "Bitte speichere zuerst deinen Namen, dann kannst du einen Vorschlag machen.",
+        variant: "error",
+      });
+      return;
+    }
+    setIsSuggestOpen(true);
+  }
+
+  function handleSuggestSuccess() {
+    setToast({
+      message:
+        "Danke! Dein Vorschlag wurde eingereicht und wartet auf Freigabe.",
+      variant: "success",
+    });
+    void reload();
+  }
+
   const everythingEmpty =
     !proposalsLoading && proposals.length === 0 && !proposalsLoadError;
 
@@ -175,7 +205,7 @@ export default function HomePage() {
         />
 
         <section className="space-y-3">
-          <div className="flex items-end justify-between gap-3">
+          <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 className="text-xl font-semibold tracking-tight text-slate-900">
                 Aktuelle Vorschlaege
@@ -184,13 +214,31 @@ export default function HomePage() {
                 Tipp auf eine Karte fuer Details und Abstimmung.
               </p>
             </div>
-            {votingFor && (
-              <span className="inline-flex items-center gap-1 text-xs font-medium text-sky-700">
-                <Loader2 size={12} className="animate-spin" />
-                Speichere Stimme...
-              </span>
-            )}
+            <div className="flex items-center gap-3">
+              {votingFor && (
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-sky-700">
+                  <Loader2 size={12} className="animate-spin" />
+                  Speichere Stimme...
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={handleOpenSuggest}
+                disabled={!isConfigured}
+                className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2.5 text-sm font-semibold text-white shadow-soft transition active:scale-[0.99] hover:from-amber-500 hover:to-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <MessageSquarePlus size={16} />
+                Vorschlag machen
+              </button>
+            </div>
           </div>
+
+          {!participant && isConfigured && (
+            <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+              Speichere zuerst deinen Namen, dann kannst du einen Vorschlag
+              machen und abstimmen.
+            </p>
+          )}
 
           {proposalsLoadError && (
             <div
@@ -217,19 +265,24 @@ export default function HomePage() {
                 Noch keine Vorschlaege.
               </p>
               <p className="mt-1 text-sm text-slate-500">
-                Sobald jemand einen Vorschlag anlegt, taucht er hier auf.
+                Mach den ersten Vorschlag fuer die Crew.
               </p>
             </div>
           )}
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {proposals.map((proposal) => {
-              const c = counts.get(proposal.id) ?? { in: 0, maybe: 0, out: 0 };
+              const c =
+                perProposal.get(proposal.id) ?? {
+                  inParticipants: [],
+                  maybe: 0,
+                  out: 0,
+                };
               return (
                 <ProposalCard
                   key={proposal.id}
                   proposal={proposal}
-                  inCount={c.in}
+                  inParticipants={c.inParticipants}
                   maybeCount={c.maybe}
                   onOpen={() => setOpenProposalId(proposal.id)}
                 />
@@ -253,6 +306,14 @@ export default function HomePage() {
           voteError={voteError}
           onClose={() => setOpenProposalId(null)}
           onVote={handleVote}
+        />
+      )}
+
+      {isSuggestOpen && participant && (
+        <SuggestProposalModal
+          participantId={participant.id}
+          onClose={() => setIsSuggestOpen(false)}
+          onSuccess={handleSuggestSuccess}
         />
       )}
 

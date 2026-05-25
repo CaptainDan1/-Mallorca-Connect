@@ -61,6 +61,7 @@ export function useProposalsPublic(): UseProposalsPublicResult {
           .from(EVENT_PROPOSALS_TABLE)
           .select("*")
           .eq("is_active", true)
+          .eq("moderation_status", "approved")
           .order("sort_order", { ascending: true })
           .order("event_start", { ascending: true, nullsFirst: false }),
         supabase.from(EVENT_VOTES_TABLE).select("*"),

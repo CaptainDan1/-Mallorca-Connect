@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -12,24 +12,63 @@ import {
   MapPin,
   Plus,
   ShieldCheck,
+  UserRound,
 } from "lucide-react";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 import {
   EVENT_PROPOSALS_TABLE,
+  PROPOSAL_MODERATION_BADGE,
+  PROPOSAL_MODERATION_LABELS,
   PROPOSAL_STATUS_BADGE,
   PROPOSAL_STATUS_LABELS,
   formatProposalDate,
   type EventProposal,
 } from "@/lib/proposals";
+import {
+  PARTICIPANTS_TABLE,
+  type ParticipantProfile,
+} from "@/lib/participants";
+
+type FilterKey = "all" | "pending" | "approved" | "rejected" | "inactive";
+
+const FILTERS: Array<{ key: FilterKey; label: string }> = [
+  { key: "all", label: "Alle" },
+  { key: "pending", label: "Wartet auf Freigabe" },
+  { key: "approved", label: "Freigegeben" },
+  { key: "rejected", label: "Abgelehnt" },
+  { key: "inactive", label: "Inaktiv" },
+];
+
+function matchesFilter(proposal: EventProposal, filter: FilterKey): boolean {
+  switch (filter) {
+    case "all":
+      return true;
+    case "pending":
+      return proposal.moderation_status === "pending";
+    case "approved":
+      return (
+        proposal.moderation_status === "approved" && proposal.is_active
+      );
+    case "rejected":
+      return proposal.moderation_status === "rejected";
+    case "inactive":
+      return !proposal.is_active;
+  }
+}
 
 export default function AdminPage() {
   const router = useRouter();
   const configured = isSupabaseConfigured();
 
   const [proposals, setProposals] = useState<EventProposal[]>([]);
+  const [submitters, setSubmitters] = useState<
+    Map<string, ParticipantProfile>
+  >(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [filter, setFilter] = useState<FilterKey>("all");
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!configured) {
@@ -47,10 +86,33 @@ export default function AdminPage() {
       const { data, error } = await supabase
         .from(EVENT_PROPOSALS_TABLE)
         .select("*")
+        .order("moderation_status", { ascending: true })
         .order("sort_order", { ascending: true })
         .order("event_start", { ascending: true, nullsFirst: false });
       if (error) throw error;
-      setProposals((data as EventProposal[]) ?? []);
+      const list = (data as EventProposal[]) ?? [];
+      setProposals(list);
+
+      const submitterIds = Array.from(
+        new Set(
+          list
+            .map((p) => p.submitted_by_participant_id)
+            .filter((v): v is string => Boolean(v)),
+        ),
+      );
+      if (submitterIds.length > 0) {
+        const { data: peopleRaw } = await supabase
+          .from(PARTICIPANTS_TABLE)
+          .select("id, display_name, hotel_info, avatar_url")
+          .in("id", submitterIds);
+        const map = new Map<string, ParticipantProfile>();
+        for (const p of (peopleRaw as ParticipantProfile[]) ?? []) {
+          map.set(p.id, p);
+        }
+        setSubmitters(map);
+      } else {
+        setSubmitters(new Map());
+      }
     } catch (error) {
       const message =
         error instanceof Error
@@ -72,11 +134,68 @@ export default function AdminPage() {
     try {
       await fetch("/api/admin/auth", { method: "DELETE" });
     } catch {
-      // Selbst wenn der Call fehlschlaegt, schicken wir zur Login-Seite.
+      // egal -- wir leiten ohnehin auf die Login-Seite.
     }
     router.replace("/admin/login");
     router.refresh();
   }
+
+  async function applyQuickAction(
+    proposalId: string,
+    action: "approve" | "reject",
+  ) {
+    if (busyId) return;
+    setBusyId(proposalId);
+    try {
+      const supabase = getSupabaseClient();
+      const update =
+        action === "approve"
+          ? { moderation_status: "approved" as const, is_active: true }
+          : { moderation_status: "rejected" as const, is_active: false };
+      const { data, error } = await supabase
+        .from(EVENT_PROPOSALS_TABLE)
+        .update(update)
+        .eq("id", proposalId)
+        .select("*")
+        .single();
+      if (error) throw error;
+      const updated = data as EventProposal;
+      setProposals((prev) =>
+        prev.map((p) => (p.id === proposalId ? updated : p)),
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Aktion hat nicht geklappt.";
+      setLoadError(message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  const counts = useMemo(() => {
+    const result: Record<FilterKey, number> = {
+      all: proposals.length,
+      pending: 0,
+      approved: 0,
+      rejected: 0,
+      inactive: 0,
+    };
+    for (const p of proposals) {
+      if (p.moderation_status === "pending") result.pending += 1;
+      if (p.moderation_status === "approved" && p.is_active)
+        result.approved += 1;
+      if (p.moderation_status === "rejected") result.rejected += 1;
+      if (!p.is_active) result.inactive += 1;
+    }
+    return result;
+  }, [proposals]);
+
+  const filtered = useMemo(
+    () => proposals.filter((p) => matchesFilter(p, filter)),
+    [proposals, filter],
+  );
 
   return (
     <main className="min-h-screen bg-stone-50">
@@ -114,7 +233,7 @@ export default function AdminPage() {
           <p className="text-sm text-slate-600">
             {isLoading
               ? "Lade Vorschlaege..."
-              : `${proposals.length} Vorschlag${proposals.length === 1 ? "" : "e"} insgesamt.`}
+              : `${counts.all} Vorschlag${counts.all === 1 ? "" : "e"} insgesamt, ${counts.pending} warten auf Freigabe.`}
           </p>
           <Link
             href="/admin/new"
@@ -123,6 +242,40 @@ export default function AdminPage() {
             <Plus size={16} />
             Neuer Vorschlag
           </Link>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {FILTERS.map((f) => {
+            const active = filter === f.key;
+            const count = counts[f.key];
+            return (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setFilter(f.key)}
+                className={
+                  "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium transition " +
+                  (active
+                    ? "bg-slate-900 text-white shadow-soft"
+                    : "bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50")
+                }
+              >
+                <span>{f.label}</span>
+                <span
+                  className={
+                    "rounded-full px-2 py-0.5 text-xs " +
+                    (active
+                      ? "bg-white/20 text-white"
+                      : f.key === "pending" && count > 0
+                        ? "bg-sky-100 text-sky-800"
+                        : "bg-slate-100 text-slate-600")
+                  }
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {loadError && (
@@ -134,70 +287,126 @@ export default function AdminPage() {
           </div>
         )}
 
-        {!isLoading && proposals.length === 0 && !loadError && (
+        {!isLoading && filtered.length === 0 && !loadError && (
           <div className="rounded-3xl border border-dashed border-slate-200 bg-white px-6 py-10 text-center shadow-soft">
             <p className="text-base font-medium text-slate-700">
-              Noch keine Vorschlaege.
+              {filter === "pending"
+                ? "Keine Vorschlaege warten auf Freigabe."
+                : "Keine Vorschlaege in dieser Ansicht."}
             </p>
-            <p className="mt-1 text-sm text-slate-500">
-              Leg den ersten Event-Vorschlag fuer die Crew an.
-            </p>
+            {filter === "all" && (
+              <p className="mt-1 text-sm text-slate-500">
+                Leg den ersten Event-Vorschlag fuer die Crew an.
+              </p>
+            )}
           </div>
         )}
 
         <ul className="space-y-3">
-          {proposals.map((proposal) => {
+          {filtered.map((proposal) => {
             const eventDate = formatProposalDate(proposal.event_start);
+            const submitter = proposal.submitted_by_participant_id
+              ? submitters.get(proposal.submitted_by_participant_id)
+              : null;
+            const isPending = proposal.moderation_status === "pending";
             return (
               <li key={proposal.id}>
-                <Link
-                  href={`/admin/${proposal.id}`}
-                  className="group flex items-stretch gap-4 rounded-3xl border border-white bg-white p-5 shadow-card transition hover:border-sky-200"
+                <div
+                  className={
+                    "flex flex-col gap-4 rounded-3xl border bg-white p-5 shadow-card transition " +
+                    (isPending
+                      ? "border-sky-200 ring-1 ring-sky-100"
+                      : "border-white")
+                  }
                 >
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="text-base font-semibold text-slate-900">
-                        {proposal.title}
-                      </h2>
-                      <span
-                        className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${PROPOSAL_STATUS_BADGE[proposal.status]}`}
+                  <Link
+                    href={`/admin/${proposal.id}`}
+                    className="group flex items-stretch gap-4"
+                  >
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="text-base font-semibold text-slate-900">
+                          {proposal.title}
+                        </h2>
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${PROPOSAL_STATUS_BADGE[proposal.status]}`}
+                        >
+                          {PROPOSAL_STATUS_LABELS[proposal.status]}
+                        </span>
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${PROPOSAL_MODERATION_BADGE[proposal.moderation_status]}`}
+                        >
+                          {
+                            PROPOSAL_MODERATION_LABELS[
+                              proposal.moderation_status
+                            ]
+                          }
+                        </span>
+                        {!proposal.is_active && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                            <EyeOff size={12} />
+                            Inaktiv
+                          </span>
+                        )}
+                      </div>
+
+                      {proposal.short_description && (
+                        <p className="text-sm text-slate-600 line-clamp-2">
+                          {proposal.short_description}
+                        </p>
+                      )}
+
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+                        {eventDate && (
+                          <span className="inline-flex items-center gap-1">
+                            <CalendarClock size={14} />
+                            {eventDate}
+                          </span>
+                        )}
+                        {proposal.meeting_point && (
+                          <span className="inline-flex items-center gap-1">
+                            <MapPin size={14} />
+                            {proposal.meeting_point}
+                          </span>
+                        )}
+                        {submitter && (
+                          <span className="inline-flex items-center gap-1">
+                            <UserRound size={14} />
+                            Eingereicht von {submitter.display_name}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center text-slate-400 group-hover:text-sky-500">
+                      <ChevronRight size={20} />
+                    </div>
+                  </Link>
+
+                  {isPending && (
+                    <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+                      <button
+                        type="button"
+                        onClick={() => applyQuickAction(proposal.id, "approve")}
+                        disabled={busyId === proposal.id}
+                        className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-3.5 py-1.5 text-sm font-semibold text-white shadow-soft transition hover:bg-emerald-700 disabled:opacity-60"
                       >
-                        {PROPOSAL_STATUS_LABELS[proposal.status]}
-                      </span>
-                      {!proposal.is_active && (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
-                          <EyeOff size={12} />
-                          Inaktiv
-                        </span>
-                      )}
+                        {busyId === proposal.id && (
+                          <Loader2 size={14} className="animate-spin" />
+                        )}
+                        Freigeben
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyQuickAction(proposal.id, "reject")}
+                        disabled={busyId === proposal.id}
+                        className="inline-flex items-center gap-2 rounded-full border border-rose-300 bg-white px-3.5 py-1.5 text-sm font-semibold text-rose-700 shadow-soft transition hover:bg-rose-50 disabled:opacity-60"
+                      >
+                        Ablehnen
+                      </button>
                     </div>
-
-                    {proposal.short_description && (
-                      <p className="text-sm text-slate-600 line-clamp-2">
-                        {proposal.short_description}
-                      </p>
-                    )}
-
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
-                      {eventDate && (
-                        <span className="inline-flex items-center gap-1">
-                          <CalendarClock size={14} />
-                          {eventDate}
-                        </span>
-                      )}
-                      {proposal.meeting_point && (
-                        <span className="inline-flex items-center gap-1">
-                          <MapPin size={14} />
-                          {proposal.meeting_point}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center text-slate-400 group-hover:text-sky-500">
-                    <ChevronRight size={20} />
-                  </div>
-                </Link>
+                  )}
+                </div>
               </li>
             );
           })}
