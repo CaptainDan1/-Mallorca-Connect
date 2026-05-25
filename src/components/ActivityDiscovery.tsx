@@ -571,6 +571,15 @@ function DiscoveryCard({
             Noch nicht eingeplant
           </span>
         </div>
+        {proposal.location_area && (
+          // Region nur Orientierung, bewusst dezenter als Status/Preis:
+          // kein eigener Ring, kleineres Padding, leichter transparent.
+          <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2">
+            <span className="inline-flex items-center rounded-full bg-white/70 px-2 py-0.5 text-[11px] font-medium text-slate-700 backdrop-blur">
+              {proposal.location_area}
+            </span>
+          </div>
+        )}
         {costSummary && (
           <div className="absolute right-3 top-3">
             <span
