@@ -1,0 +1,44 @@
+*.zip
+*.rar
+*.lnk
+/.claude
+/.next
+/SQL
+/tsconfig.tsbuildinfo
+
+#Doku
+/00 Documentation
+
+# Dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# Testing
+/coverage
+
+# Production
+/build
+/out
+
+# Misc
+.DS_Store
+*.pem
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local env files (Secrets niemals committen!)
+.env
+.env*.local
+.env.local
+.env.development.local
+.env.production.local
+
+# Vercel
+.vercel
+
+# Word-Temp-Dateien
+~$*
