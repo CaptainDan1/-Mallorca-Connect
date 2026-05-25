@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  AlertTriangle,
   CalendarClock,
   CalendarRange,
   ChevronRight,
@@ -20,6 +21,7 @@ import {
   Trash2,
   Users,
   UserRound,
+  X,
 } from "lucide-react";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 import {
@@ -111,6 +113,8 @@ export default function AdminPage() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleteResult, setBulkDeleteResult] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!configured) {
@@ -296,6 +300,36 @@ export default function AdminPage() {
     }
   }
 
+  // Bulk Hard-Delete aller inaktiven Vorschlaege. Geht ueber die
+  // server-seitige Admin-Route, weil RLS dem anon-Key kein delete erlaubt
+  // und wir hier bewusst keine offene anon-delete-Policy oeffnen wollen.
+  // Nach Erfolg laden wir die Liste neu, damit der inactive-Count auf 0
+  // springt.
+  async function handleBulkDeleteInactive(): Promise<
+    { ok: true; count: number } | { ok: false; error: string }
+  > {
+    const response = await fetch("/api/admin/proposals/delete-inactive", {
+      method: "DELETE",
+      credentials: "same-origin",
+    });
+    let payload:
+      | { ok: true; count: number }
+      | { ok: false; error: string }
+      | null = null;
+    try {
+      payload = (await response.json()) as typeof payload;
+    } catch {
+      payload = null;
+    }
+    if (!payload) {
+      return {
+        ok: false,
+        error: `Server antwortete unerwartet (HTTP ${response.status}).`,
+      };
+    }
+    return payload;
+  }
+
   async function handleRestore(proposal: EventProposal) {
     if (busyId) return;
     setBusyId(proposal.id);
@@ -446,6 +480,37 @@ export default function AdminPage() {
             );
           })}
         </div>
+
+        {filter === "inactive" && counts.inactive > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50/60 px-4 py-3 text-sm">
+            <p className="text-rose-900">
+              <span className="font-semibold">{counts.inactive}</span>{" "}
+              inaktive Aktivitaet{counts.inactive === 1 ? "" : "en"} im
+              Archiv. Du kannst sie endgueltig loeschen oder einzeln
+              wiederherstellen.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setBulkDeleteResult(null);
+                setBulkDeleteOpen(true);
+              }}
+              className="inline-flex items-center gap-2 rounded-full bg-rose-600 px-3.5 py-1.5 text-sm font-semibold text-white shadow-soft transition hover:bg-rose-700"
+            >
+              <Trash2 size={14} />
+              Inaktive endgueltig loeschen
+            </button>
+          </div>
+        )}
+
+        {bulkDeleteResult && (
+          <div
+            role="status"
+            className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"
+          >
+            {bulkDeleteResult}
+          </div>
+        )}
 
         {loadError && (
           <div
@@ -681,7 +746,163 @@ export default function AdminPage() {
           })}
         </ul>
       </div>
+
+      {bulkDeleteOpen && (
+        <BulkDeleteInactiveModal
+          count={counts.inactive}
+          onClose={() => setBulkDeleteOpen(false)}
+          onConfirm={async () => {
+            const result = await handleBulkDeleteInactive();
+            if (result.ok) {
+              setBulkDeleteOpen(false);
+              setBulkDeleteResult(
+                `${result.count} inaktive Aktivitaet${result.count === 1 ? "" : "en"} wurden geloescht.`,
+              );
+              await load();
+            }
+            return result;
+          }}
+        />
+      )}
     </main>
+  );
+}
+
+type BulkDeleteInactiveModalProps = {
+  count: number;
+  onClose: () => void;
+  onConfirm: () => Promise<
+    { ok: true; count: number } | { ok: false; error: string }
+  >;
+};
+
+function BulkDeleteInactiveModal({
+  count,
+  onClose,
+  onConfirm,
+}: BulkDeleteInactiveModalProps) {
+  const [typed, setTyped] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Beide Schreibweisen akzeptieren, damit der User nicht ueber den
+  // Umlaut stolpert.
+  const normalized = typed.trim().toUpperCase();
+  const canConfirm =
+    !isDeleting && (normalized === "LOESCHEN" || normalized === "LÖSCHEN");
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canConfirm) return;
+    setIsDeleting(true);
+    setError(null);
+    const result = await onConfirm();
+    if (!result.ok) {
+      setError(result.error);
+      setIsDeleting(false);
+    }
+    // Bei Erfolg schliesst der Parent das Modal -- wir setzen den State
+    // bewusst nicht zurueck.
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Inaktive Aktivitaeten endgueltig loeschen"
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+    >
+      <div
+        className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+        onClick={() => {
+          if (!isDeleting) onClose();
+        }}
+      />
+      <div className="relative z-10 w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <div className="flex items-start gap-3 border-b border-slate-100 bg-rose-50/60 px-5 py-4">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-rose-700">
+            <AlertTriangle size={20} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base font-semibold text-rose-900">
+              Inaktive Aktivitaeten endgueltig loeschen?
+            </h2>
+            <p className="mt-1 text-sm text-rose-900/85">
+              Es werden <strong>{count}</strong> inaktive Aktivitaet
+              {count === 1 ? "" : "en"} dauerhaft geloescht. Das kann nicht
+              rueckgaengig gemacht werden.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (!isDeleting) onClose();
+            }}
+            aria-label="Schliessen"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-white hover:text-slate-800 disabled:opacity-50"
+            disabled={isDeleting}
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4 px-5 py-5">
+          <div>
+            <label
+              htmlFor="bulk_delete_confirm"
+              className="mb-2 block text-sm font-medium text-slate-700"
+            >
+              Tippe <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-800">LOESCHEN</code>{" "}
+              zur Bestaetigung
+            </label>
+            <input
+              id="bulk_delete_confirm"
+              type="text"
+              autoFocus
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              disabled={isDeleting}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="LOESCHEN"
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 font-mono text-sm tracking-wider text-slate-900 outline-none transition focus:border-rose-400 focus:ring-2 focus:ring-rose-200 disabled:bg-slate-50"
+            />
+          </div>
+
+          {error && (
+            <div
+              role="alert"
+              className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"
+            >
+              {error}
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isDeleting}
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+            >
+              Abbrechen
+            </button>
+            <button
+              type="submit"
+              disabled={!canConfirm}
+              className="inline-flex items-center gap-2 rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-soft transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isDeleting ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Trash2 size={14} />
+              )}
+              Endgueltig loeschen
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 
