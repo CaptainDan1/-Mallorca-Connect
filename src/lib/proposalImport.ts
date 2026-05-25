@@ -19,7 +19,7 @@ import {
   emptyProposalInput,
   normalizeLocationArea,
   normalizeTitleSlug,
-  trimOrNull,
+  normalizeUrlLikeInput,
   type EventProposalInput,
 } from "@/lib/proposals";
 
@@ -164,28 +164,32 @@ function parseRow(
     }
   }
 
-  // Optionale Felder.
-  const sourceUrl = getString(raw, "sourceUrl");
-  const imageUrl = getString(raw, "imageUrl");
+  // Optionale Felder. URL-aehnliche Eingaben (auch Markdown-Links wie
+  // `[Es Trenc](https://...)`) ueber den zentralen Normalizer schicken,
+  // damit nie ein relativer Pfad als externe URL gespeichert wird.
+  const rawSourceUrl = getString(raw, "sourceUrl");
+  const rawImageUrl = getString(raw, "imageUrl");
   const statusInput = getString(raw, "status");
 
-  if (!imageUrl) {
-    issues.push({ level: "warning", message: "Bild fehlt" });
-  }
-  if (!sourceUrl) {
+  const sourceUrl = normalizeUrlLikeInput(rawSourceUrl);
+  const imageUrl = normalizeUrlLikeInput(rawImageUrl);
+
+  if (rawSourceUrl && !sourceUrl) {
+    issues.push({
+      level: "warning",
+      message: `Quelle sieht nicht wie eine http(s)-URL aus: ${rawSourceUrl}`,
+    });
+  } else if (!sourceUrl) {
     issues.push({ level: "warning", message: "Quelle fehlt" });
   }
 
-  // sourceUrl: einfache URL-Pruefung.
-  if (sourceUrl) {
-    try {
-      new URL(sourceUrl);
-    } catch {
-      issues.push({
-        level: "warning",
-        message: `Quelle sieht nicht wie eine URL aus: ${sourceUrl}`,
-      });
-    }
+  if (rawImageUrl && !imageUrl) {
+    issues.push({
+      level: "warning",
+      message: `Bild-URL sieht nicht wie eine http(s)-URL aus: ${rawImageUrl}`,
+    });
+  } else if (!imageUrl) {
+    issues.push({ level: "warning", message: "Bild fehlt" });
   }
 
   // Dubletten.
@@ -223,10 +227,10 @@ function parseRow(
       duration: values.possibleTimes,
       meeting_point: values.meetingPoint,
       cost_note: values.costHint,
-      image_path: trimOrNull(imageUrl),
+      image_path: imageUrl,
       location_area: normalizedLocation,
       category: values.category,
-      source_url: trimOrNull(sourceUrl),
+      source_url: sourceUrl,
       status: mapped.status,
       moderation_status: mapped.moderation_status,
       is_active: mapped.is_active,

@@ -302,6 +302,61 @@ export function trimOrNull(value: string | null | undefined): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
+// Akzeptiert eine reine URL, einen Markdown-Link `[label](url)` oder
+// `[url](url)` sowie autolink-Form `<url>`. Leere oder ungueltige Eingaben
+// werden zu null. Erlaubt sind nur http(s)-Schemata — sonst null, damit
+// nie ein relativer Pfad als externe URL gerendert wird.
+export function normalizeUrlLikeInput(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  let s = value.trim();
+  if (!s) return null;
+  // Markdown-Link [label](url) -> URL aus der runden Klammer ziehen.
+  const md = s.match(/^\[[^\]]*\]\(\s*(\S[^)]*?)\s*\)\s*$/);
+  if (md) {
+    s = md[1].trim();
+  }
+  // Autolink-Form <https://...>.
+  if (s.startsWith("<") && s.endsWith(">")) {
+    s = s.slice(1, -1).trim();
+  }
+  // Umschliessende Anfuehrungszeichen.
+  if (
+    (s.startsWith('"') && s.endsWith('"')) ||
+    (s.startsWith("'") && s.endsWith("'"))
+  ) {
+    s = s.slice(1, -1).trim();
+  }
+  if (!s) return null;
+  try {
+    const url = new URL(s);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return s;
+  } catch {
+    return null;
+  }
+}
+
+// Loest eine moeglicherweise relative Bild-URL gegen eine Basis-URL auf
+// und gibt nur http(s)-Ergebnisse zurueck. Akzeptiert protokoll-relative
+// `//host/...`-URLs. Bei ungueltiger Eingabe -> null.
+export function resolveImageUrl(
+  src: string | null | undefined,
+  baseUrl: string,
+): string | null {
+  if (!src) return null;
+  const trimmed = src.trim();
+  if (!trimmed) return null;
+  try {
+    const resolved = new URL(trimmed, baseUrl);
+    if (resolved.protocol !== "http:" && resolved.protocol !== "https:") {
+      return null;
+    }
+    return resolved.toString();
+  } catch {
+    return null;
+  }
+}
+
 // `number | null` aus einem Input-Wert. Negative Werte werden auf 0
 // geklemmt, leere Eingaben werden zu null.
 export function parseOptionalInt(value: string): number | null {
