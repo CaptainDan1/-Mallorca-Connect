@@ -9,6 +9,7 @@ import {
   MessageSquarePlus,
   Sparkles,
   Sun,
+  Wallet,
 } from "lucide-react";
 import {
   isScheduled,
@@ -210,23 +211,39 @@ function DiscoveryCard({
   onOpen,
 }: DiscoveryCardProps) {
   const hasImage = Boolean(proposal.image_path);
+  const costSummary = summarizeCost(proposal.cost_note);
+
+  function handleInterestClick(event: React.MouseEvent<HTMLButtonElement>) {
+    // Karte ist als Ganzes klickbar. Der Heart-Button darf den Klick auf
+    // die Karte (oeffnet das Detailfenster) nicht ausloesen.
+    event.stopPropagation();
+    onToggleInterest();
+  }
 
   return (
+    // Karte selbst ist der klickbare Container. Wir nutzen ein <article>
+    // + role="button", damit innen weitere Buttons (Heart) frei nutzbar
+    // bleiben und keine Buttons verschachtelt werden.
     <article
       data-discovery-card
-      className="group relative flex w-[82%] shrink-0 snap-start flex-col overflow-hidden rounded-3xl border border-white bg-white shadow-card transition hover:-translate-y-0.5 hover:shadow-xl sm:w-[58%] md:w-[42%] lg:w-[32%] xl:w-[28%]"
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+      aria-label={`Details zu ${proposal.title} oeffnen`}
+      className="group relative flex w-[82%] shrink-0 cursor-pointer snap-start flex-col overflow-hidden rounded-3xl border border-white bg-white text-left shadow-card transition hover:-translate-y-0.5 hover:shadow-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 sm:w-[58%] md:w-[42%] lg:w-[32%] xl:w-[28%]"
     >
-      <button
-        type="button"
-        onClick={onOpen}
-        aria-label={`${proposal.title} oeffnen`}
-        className="relative block aspect-[16/9] w-full overflow-hidden bg-gradient-to-br from-amber-200 via-orange-200 to-sky-200 text-left focus:outline-none focus:ring-2 focus:ring-sky-300"
-      >
+      <div className="relative block aspect-[16/9] w-full overflow-hidden bg-gradient-to-br from-amber-200 via-orange-200 to-sky-200">
         {hasImage ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={proposal.image_path as string}
-            alt={proposal.title}
+            alt=""
             className="h-full w-full object-cover object-center transition duration-500 group-hover:scale-[1.03]"
           />
         ) : (
@@ -240,12 +257,23 @@ function DiscoveryCard({
             Noch nicht eingeplant
           </span>
         </div>
+        {costSummary && (
+          <div className="absolute right-3 top-3">
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-white/85 px-2.5 py-1 text-xs font-medium text-slate-700 shadow-soft ring-1 ring-black/5 backdrop-blur"
+              title={proposal.cost_note ?? undefined}
+            >
+              <Wallet size={12} aria-hidden />
+              {costSummary}
+            </span>
+          </div>
+        )}
         <div className="absolute bottom-3 left-3 right-3">
           <h3 className="text-lg font-semibold leading-tight text-white drop-shadow">
             {proposal.title}
           </h3>
         </div>
-      </button>
+      </div>
 
       <div className="flex flex-1 flex-col gap-3 p-4">
         {proposal.short_description && (
@@ -269,9 +297,14 @@ function DiscoveryCard({
         <div className="mt-auto flex items-center gap-2">
           <button
             type="button"
-            onClick={onToggleInterest}
+            onClick={handleInterestClick}
             disabled={disabled || busy}
             aria-pressed={mine}
+            aria-label={
+              mine
+                ? `Interesse an ${proposal.title} entfernen`
+                : `Interesse an ${proposal.title} merken`
+            }
             className={
               "inline-flex flex-1 items-center justify-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-semibold transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 " +
               (mine
@@ -290,15 +323,41 @@ function DiscoveryCard({
             )}
             {mine ? "Interesse gemerkt" : "Interessiert"}
           </button>
-          <button
-            type="button"
-            onClick={onOpen}
-            className="inline-flex items-center justify-center rounded-2xl bg-slate-900 px-3 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:bg-slate-800"
-          >
-            Details
-          </button>
         </div>
       </div>
     </article>
   );
+}
+
+// Kurzfassung des cost_note fuer die Pille im Banner. Wir wollen keine
+// langen Saetze auf einem Foto -- nur Spanne oder "kostenlos". Wenn nichts
+// erkennbar ist, geben wir null zurueck und lassen die Pille weg.
+function summarizeCost(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const text = raw.trim();
+  if (!text) return null;
+  const lower = text.toLowerCase();
+  if (/(kostenlos|gratis|umsonst|free|0\s*€|0\s*eur)/.test(lower)) {
+    return "kostenlos";
+  }
+  // Spanne wie "30-45", "30 – 45", "30 bis 45" mit optionalen Waehrungs-
+  // angaben/Punkten.
+  const range = text.match(
+    /(\d{1,4})(?:\s*(?:[-–—]|bis)\s*)(\d{1,4})\s*(?:€|eur|euro)?/i,
+  );
+  if (range) {
+    return `ca. ${range[1]}–${range[2]} €`;
+  }
+  // Einzelbetrag wie "ca. 30 €", "30 EUR", "ab 25 €".
+  const single = text.match(/(\d{1,4})\s*(?:€|eur|euro)/i);
+  if (single) {
+    const prefix = /\bab\b/i.test(text)
+      ? "ab"
+      : /\bca\b\.?/i.test(text)
+        ? "ca."
+        : "ca.";
+    return `${prefix} ${single[1]} €`;
+  }
+  // Sonst nichts erkannt -- bewusst keine Pille (eher gar nichts als Muell).
+  return null;
 }

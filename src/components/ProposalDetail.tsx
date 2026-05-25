@@ -313,17 +313,27 @@ export function ProposalDetail({
             <section className="rounded-2xl bg-amber-50 px-4 py-4 ring-1 ring-amber-200">
               <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-amber-900">
                 <Sun size={14} />
-                Wer findet das interessant?
+                Wer ist interessiert?
               </h3>
-              <p className="mb-3 text-sm text-amber-900/80">
-                {tentative
-                  ? "Slot ist vorgemerkt, aber noch nicht fix. Zeit und Treffpunkt werden noch abgestimmt."
-                  : "Diese Idee ist noch nicht fest eingeplant. Wenn dich das interessiert, markiere sie – daraus kann spaeter eine Gruppe entstehen."}
-              </p>
+              <div className="mb-3 space-y-1 text-sm text-amber-900/85">
+                <p className="font-medium">
+                  {tentative
+                    ? "Slot ist vorgemerkt, aber noch nicht fix."
+                    : "Noch nicht fest eingeplant."}
+                </p>
+                <p>
+                  Zeig Interesse, damit wir sehen, ob sich eine Gruppe lohnt.
+                </p>
+                <p className="text-amber-900/70">
+                  Eine verbindliche Teilnahme gibt es erst, wenn ein Zeitpunkt
+                  feststeht.
+                </p>
+              </div>
               <ProposalAttendees
                 participants={interestedParticipants}
                 maxAvatars={8}
                 size="lg"
+                mode="interested"
                 emptyText="Noch niemand interessiert. Mach den Anfang."
               />
             </section>

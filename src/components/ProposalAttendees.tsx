@@ -3,8 +3,10 @@
 import { avatarGradient, getInitials } from "@/lib/utils";
 import type { ParticipantProfile } from "@/lib/participants";
 
+type AttendeesMode = "in" | "interested";
+
 type ProposalAttendeesProps = {
-  /** Teilnehmer mit Vote "in" (bereits dedupliziert + aufgeloest). */
+  /** Teilnehmer (bereits dedupliziert + aufgeloest). */
   participants: ParticipantProfile[];
   /** Maximale Anzahl Avatare in der Stapelansicht. */
   maxAvatars?: number;
@@ -12,6 +14,12 @@ type ProposalAttendeesProps = {
   size?: "sm" | "lg";
   /** Empty-State-Text. */
   emptyText?: string;
+  /**
+   * "in" (default): "... ist/sind dabei".
+   * "interested":  "... ist/sind interessiert".
+   * Aendert nur den Begleittext, nicht die Avatare.
+   */
+  mode?: AttendeesMode;
 };
 
 export function ProposalAttendees({
@@ -19,6 +27,7 @@ export function ProposalAttendees({
   maxAvatars = 5,
   size = "sm",
   emptyText = "Noch niemand dabei",
+  mode = "in",
 }: ProposalAttendeesProps) {
   if (participants.length === 0) {
     return (
@@ -38,7 +47,7 @@ export function ProposalAttendees({
   const overlap = size === "lg" ? "-ml-2" : "-ml-2";
 
   const names = participants.map((p) => p.display_name);
-  const summary = formatNames(names);
+  const summary = formatNames(names, mode);
 
   return (
     <div className="flex items-center gap-3">
@@ -79,13 +88,15 @@ export function ProposalAttendees({
   );
 }
 
-function formatNames(names: string[]): string {
+function formatNames(names: string[], mode: AttendeesMode): string {
+  const singular = mode === "interested" ? "ist interessiert" : "ist dabei";
+  const plural = mode === "interested" ? "sind interessiert" : "sind dabei";
   if (names.length === 0) return "";
-  if (names.length === 1) return `${names[0]} ist dabei`;
-  if (names.length === 2) return `${names[0]} und ${names[1]} sind dabei`;
+  if (names.length === 1) return `${names[0]} ${singular}`;
+  if (names.length === 2) return `${names[0]} und ${names[1]} ${plural}`;
   if (names.length === 3) {
-    return `${names[0]}, ${names[1]} und ${names[2]} sind dabei`;
+    return `${names[0]}, ${names[1]} und ${names[2]} ${plural}`;
   }
   const remaining = names.length - 2;
-  return `${names[0]}, ${names[1]} und ${remaining} weitere sind dabei`;
+  return `${names[0]}, ${names[1]} und ${remaining} weitere ${plural}`;
 }
