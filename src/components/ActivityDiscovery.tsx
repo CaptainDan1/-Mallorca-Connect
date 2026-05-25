@@ -81,97 +81,111 @@ export function ActivityDiscovery({
 
   const isEmpty = sorted.length === 0;
 
+  // Diese Section bricht bewusst aus dem schmalen Hauptcontainer aus.
+  // Sie ist als eigene "Buehne" gedacht: voller Breite des Viewports,
+  // innen aber durch `max-w-7xl` ruhig begrenzt.
   return (
-    <section className="space-y-4">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight text-slate-900">
-            Aktivitaeten entdecken
-          </h2>
-          <p className="text-sm text-slate-600">
-            Ideen, die noch nicht fest eingeplant sind. Zeig Interesse,
-            damit der Admin weiss, was die Crew anlocken wuerde.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onSuggest}
-          disabled={!canInteract}
-          className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2.5 text-sm font-semibold text-white shadow-soft transition active:scale-[0.99] hover:from-amber-500 hover:to-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <MessageSquarePlus size={16} />
-          Eigene Idee vorschlagen
-        </button>
-      </header>
-
-      {isEmpty ? (
-        <div className="rounded-3xl border border-dashed border-slate-200 bg-white px-6 py-10 text-center shadow-soft">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-soft">
-            <Sparkles size={20} />
+    <section className="w-full bg-gradient-to-b from-stone-50 via-white to-stone-50">
+      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        <header className="mb-5 flex flex-col gap-4 sm:mb-6 sm:flex-row sm:items-end sm:justify-between">
+          <div className="max-w-2xl">
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-amber-700">
+              Inspiration
+            </p>
+            <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+              Aktivitaeten entdecken
+            </h2>
+            <p className="mt-2 text-sm text-slate-600 sm:text-base">
+              Ideen, die noch nicht fest eingeplant sind. Zeig Interesse,
+              damit der Admin weiss, was die Crew anlocken wuerde.
+            </p>
           </div>
-          <p className="text-base font-medium text-slate-700">
-            Noch keine offenen Ideen.
-          </p>
-          <p className="mt-1 text-sm text-slate-500">
-            Mach den ersten Vorschlag fuer die Crew.
-          </p>
-        </div>
-      ) : (
-        <div className="relative">
-          {/* Pfeile (Desktop). Mobil ueber Swipe. */}
-          <button
-            type="button"
-            onClick={() => scrollByCards("left")}
-            disabled={!canScrollLeft}
-            aria-label="Zurueck scrollen"
-            className={
-              "hidden sm:flex absolute left-0 top-1/2 z-10 -translate-y-1/2 -translate-x-1/2 h-10 w-10 items-center justify-center rounded-full bg-white text-slate-700 shadow-card ring-1 ring-slate-200 transition " +
-              (canScrollLeft
-                ? "opacity-100 hover:bg-slate-50"
-                : "opacity-0 pointer-events-none")
-            }
-          >
-            <ChevronLeft size={20} />
-          </button>
-          <button
-            type="button"
-            onClick={() => scrollByCards("right")}
-            disabled={!canScrollRight}
-            aria-label="Weiter scrollen"
-            className={
-              "hidden sm:flex absolute right-0 top-1/2 z-10 -translate-y-1/2 translate-x-1/2 h-10 w-10 items-center justify-center rounded-full bg-white text-slate-700 shadow-card ring-1 ring-slate-200 transition " +
-              (canScrollRight
-                ? "opacity-100 hover:bg-slate-50"
-                : "opacity-0 pointer-events-none")
-            }
-          >
-            <ChevronRight size={20} />
-          </button>
-
-          <div
-            ref={scrollerRef}
-            className="-mx-4 sm:mx-0 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 sm:px-0 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          >
-            {sorted.map((proposal) => {
-              const count = interestCounts.get(proposal.id) ?? 0;
-              const mine = isInterested(proposal.id);
-              const busy = interestBusyFor === proposal.id;
-              return (
-                <DiscoveryCard
-                  key={proposal.id}
-                  proposal={proposal}
-                  count={count}
-                  mine={mine}
-                  busy={busy}
-                  disabled={!canInteract}
-                  onToggleInterest={() => onToggleInterest(proposal.id)}
-                  onOpen={() => onOpenProposal(proposal.id)}
-                />
-              );
-            })}
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            <button
+              type="button"
+              onClick={onSuggest}
+              disabled={!canInteract}
+              className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2.5 text-sm font-semibold text-white shadow-soft transition active:scale-[0.99] hover:from-amber-500 hover:to-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <MessageSquarePlus size={16} />
+              Eigene Idee vorschlagen
+            </button>
           </div>
-        </div>
-      )}
+        </header>
+
+        {isEmpty ? (
+          <div className="rounded-3xl border border-dashed border-slate-200 bg-white px-6 py-12 text-center shadow-soft">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-soft">
+              <Sparkles size={20} />
+            </div>
+            <p className="text-base font-medium text-slate-700">
+              Noch keine offenen Ideen.
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              Mach den ersten Vorschlag fuer die Crew.
+            </p>
+          </div>
+        ) : (
+          <div className="relative">
+            {/* Pfeile (Desktop). Mobil ueber Swipe. */}
+            <button
+              type="button"
+              onClick={() => scrollByCards("left")}
+              disabled={!canScrollLeft}
+              aria-label="Zurueck scrollen"
+              className={
+                "hidden sm:flex absolute left-0 top-1/2 z-10 -translate-y-1/2 -translate-x-1/2 h-11 w-11 items-center justify-center rounded-full bg-white text-slate-800 shadow-lg ring-1 ring-slate-200 transition lg:h-12 lg:w-12 " +
+                (canScrollLeft
+                  ? "opacity-100 hover:bg-slate-50 hover:shadow-xl"
+                  : "opacity-0 pointer-events-none")
+              }
+            >
+              <ChevronLeft size={22} />
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollByCards("right")}
+              disabled={!canScrollRight}
+              aria-label="Weiter scrollen"
+              className={
+                "hidden sm:flex absolute right-0 top-1/2 z-10 -translate-y-1/2 translate-x-1/2 h-11 w-11 items-center justify-center rounded-full bg-white text-slate-800 shadow-lg ring-1 ring-slate-200 transition lg:h-12 lg:w-12 " +
+                (canScrollRight
+                  ? "opacity-100 hover:bg-slate-50 hover:shadow-xl"
+                  : "opacity-0 pointer-events-none")
+              }
+            >
+              <ChevronRight size={22} />
+            </button>
+
+            {/* Sanfte Rand-Verlaeufe, damit klar wird: hier scrollt es. */}
+            <div className="pointer-events-none absolute inset-y-0 left-0 z-[5] hidden w-12 bg-gradient-to-r from-stone-50 to-transparent sm:block" />
+            <div className="pointer-events-none absolute inset-y-0 right-0 z-[5] hidden w-12 bg-gradient-to-l from-stone-50 to-transparent sm:block" />
+
+            <div
+              ref={scrollerRef}
+              className="-mx-4 sm:-mx-6 lg:-mx-8 flex snap-x snap-mandatory gap-5 overflow-x-auto px-4 sm:px-6 lg:px-8 pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            >
+              {sorted.map((proposal) => {
+                const count = interestCounts.get(proposal.id) ?? 0;
+                const mine = isInterested(proposal.id);
+                const busy = interestBusyFor === proposal.id;
+                return (
+                  <DiscoveryCard
+                    key={proposal.id}
+                    proposal={proposal}
+                    count={count}
+                    mine={mine}
+                    busy={busy}
+                    disabled={!canInteract}
+                    onToggleInterest={() => onToggleInterest(proposal.id)}
+                    onOpen={() => onOpenProposal(proposal.id)}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
     </section>
   );
 }
@@ -200,7 +214,7 @@ function DiscoveryCard({
   return (
     <article
       data-discovery-card
-      className="group relative flex w-[78%] shrink-0 snap-start flex-col overflow-hidden rounded-3xl border border-white bg-white shadow-card transition hover:shadow-lg sm:w-[58%] md:w-[44%]"
+      className="group relative flex w-[82%] shrink-0 snap-start flex-col overflow-hidden rounded-3xl border border-white bg-white shadow-card transition hover:-translate-y-0.5 hover:shadow-xl sm:w-[58%] md:w-[42%] lg:w-[32%] xl:w-[28%]"
     >
       <button
         type="button"

@@ -265,7 +265,8 @@ export default function HomePage() {
     <main className="min-h-screen bg-stone-50">
       <HeroSection />
 
-      <div className="mx-auto max-w-3xl px-4 sm:px-6 -mt-12 sm:-mt-16 pb-16 space-y-8 relative">
+      {/* Profilbereich + Hinweise im normalen, schmalen Container. */}
+      <div className="mx-auto max-w-3xl px-4 sm:px-6 -mt-12 sm:-mt-16 space-y-6 relative">
         {!isConfigured && (
           <div className="rounded-3xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900 shadow-soft">
             <p className="font-medium">Supabase ist noch nicht verbunden.</p>
@@ -312,66 +313,73 @@ export default function HomePage() {
             Lade Vorschlaege...
           </div>
         )}
-
-        {!proposalsLoading && !proposalsLoadError && (
-          <>
-            <ActivityDiscovery
-              proposals={proposals}
-              interestCounts={interestCounts}
-              isInterested={(id) => myInterestSet.has(id)}
-              interestBusyFor={interestBusyFor}
-              onToggleInterest={(id) => void handleToggleInterest(id)}
-              onOpenProposal={(id) => setOpenProposalId(id)}
-              onSuggest={handleOpenSuggest}
-              canInteract={canInteract}
-            />
-
-            <GroupPlan
-              proposals={proposals}
-              countsByProposal={countsByProposal}
-              myVoteByProposal={myVoteByProposal}
-              interestCounts={interestCounts}
-              onOpenProposal={(id) => setOpenProposalId(id)}
-            />
-
-            <section className="rounded-3xl border border-white bg-white px-5 py-5 shadow-card">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-semibold text-slate-900">
-                    Eine eigene Idee?
-                  </h3>
-                  <p className="mt-1 text-sm text-slate-600">
-                    Schlag etwas vor &ndash; nach kurzer Freigabe taucht es
-                    bei &bdquo;Aktivitaeten entdecken&ldquo; auf.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleOpenSuggest}
-                  disabled={!canInteract}
-                  className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2.5 text-sm font-semibold text-white shadow-soft transition active:scale-[0.99] hover:from-amber-500 hover:to-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <MessageSquarePlus size={16} />
-                  Idee vorschlagen
-                </button>
-              </div>
-            </section>
-          </>
-        )}
-
-        {votingFor && (
-          <div className="flex justify-end">
-            <span className="inline-flex items-center gap-1 text-xs font-medium text-sky-700">
-              <Loader2 size={12} className="animate-spin" />
-              Speichere Stimme...
-            </span>
-          </div>
-        )}
-
-        <footer className="pt-4 text-center text-xs text-slate-400">
-          Mallorca-Connect &middot; Alles kann, nichts muss.
-        </footer>
       </div>
+
+      {/* Breite Discovery-Sektion: bewusst AUSSERHALB des max-w-3xl
+          Containers. Eigener breiter Wrapper steckt in der Komponente. */}
+      {!proposalsLoading && !proposalsLoadError && (
+        <div className="mt-8 sm:mt-10">
+          <ActivityDiscovery
+            proposals={proposals}
+            interestCounts={interestCounts}
+            isInterested={(id) => myInterestSet.has(id)}
+            interestBusyFor={interestBusyFor}
+            onToggleInterest={(id) => void handleToggleInterest(id)}
+            onOpenProposal={(id) => setOpenProposalId(id)}
+            onSuggest={handleOpenSuggest}
+            canInteract={canInteract}
+          />
+        </div>
+      )}
+
+      {/* Plan + Idee-Hinweis bleiben im schmalen Container. */}
+      {!proposalsLoading && !proposalsLoadError && (
+        <div className="mx-auto max-w-3xl px-4 sm:px-6 mt-8 sm:mt-10 space-y-8 pb-16 relative">
+          <GroupPlan
+            proposals={proposals}
+            countsByProposal={countsByProposal}
+            myVoteByProposal={myVoteByProposal}
+            interestCounts={interestCounts}
+            onOpenProposal={(id) => setOpenProposalId(id)}
+          />
+
+          <section className="rounded-3xl border border-white bg-white px-5 py-5 shadow-card">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">
+                  Eine eigene Idee?
+                </h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  Schlag etwas vor &ndash; nach kurzer Freigabe taucht es
+                  bei &bdquo;Aktivitaeten entdecken&ldquo; auf.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleOpenSuggest}
+                disabled={!canInteract}
+                className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2.5 text-sm font-semibold text-white shadow-soft transition active:scale-[0.99] hover:from-amber-500 hover:to-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <MessageSquarePlus size={16} />
+                Idee vorschlagen
+              </button>
+            </div>
+          </section>
+
+          {votingFor && (
+            <div className="flex justify-end">
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-sky-700">
+                <Loader2 size={12} className="animate-spin" />
+                Speichere Stimme...
+              </span>
+            </div>
+          )}
+
+          <footer className="pt-4 text-center text-xs text-slate-400">
+            Mallorca-Connect &middot; Alles kann, nichts muss.
+          </footer>
+        </div>
+      )}
 
       {openProposal && (
         <ProposalDetail
