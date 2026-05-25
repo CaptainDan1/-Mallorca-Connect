@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
+  Filter,
   Heart,
   Loader2,
   MessageSquarePlus,
@@ -12,7 +13,9 @@ import {
   Wallet,
 } from "lucide-react";
 import {
+  DISCOVERY_TAGS,
   isScheduled,
+  type DiscoveryTag,
   type EventProposal,
 } from "@/lib/proposals";
 
@@ -37,13 +40,50 @@ export function ActivityDiscovery({
   onSuggest,
   canInteract,
 }: ActivityDiscoveryProps) {
+  // Aktiver Tag-Filter. `null` = "Alle". Wird nur clientseitig gehalten,
+  // keine URL- oder Local-Storage-Bindung.
+  const [activeTag, setActiveTag] = useState<DiscoveryTag | null>(null);
+
   // Nur freigegebene, aktive Vorschlaege ohne festen Slot.
-  // (Vorfilter erfolgt vom Hook bereits via is_active + moderation_status.)
-  const open = proposals.filter((p) => !isScheduled(p));
-  const sorted = [...open].sort((a, b) => {
-    if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
-    return a.title.localeCompare(b.title, "de");
-  });
+  const open = useMemo(
+    () => proposals.filter((p) => !isScheduled(p)),
+    [proposals],
+  );
+
+  // Counts pro Tag fuer die Filterleiste -- zeigt Nutzern, wieviel pro
+  // Filter zu erwarten ist (kleine Zahl in der Pille).
+  const tagCounts = useMemo(() => {
+    const counts: Record<DiscoveryTag, number> = {
+      Aktion: 0,
+      Entspannung: 0,
+      Wasser: 0,
+      Kultur: 0,
+      Essen: 0,
+      Natur: 0,
+      Party: 0,
+    };
+    for (const p of open) {
+      const tags = p.tags ?? [];
+      for (const tag of tags) {
+        if (tag in counts) counts[tag as DiscoveryTag] += 1;
+      }
+    }
+    return counts;
+  }, [open]);
+
+  const filtered = useMemo(() => {
+    if (!activeTag) return open;
+    return open.filter((p) => (p.tags ?? []).includes(activeTag));
+  }, [open, activeTag]);
+
+  const sorted = useMemo(
+    () =>
+      [...filtered].sort((a, b) => {
+        if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+        return a.title.localeCompare(b.title, "de");
+      }),
+    [filtered],
+  );
 
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -69,26 +109,37 @@ export function ActivityDiscovery({
     };
   }, [updateScrollState, sorted.length]);
 
+  // Wenn der Filter wechselt, zurueck nach links scrollen -- so sieht der
+  // Nutzer sofort, was die neue Auswahl bringt.
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    el.scrollTo({ left: 0, behavior: "smooth" });
+  }, [activeTag]);
+
   function scrollByCards(direction: "left" | "right") {
     const el = scrollerRef.current;
     if (!el) return;
     const firstCard = el.querySelector<HTMLElement>("[data-discovery-card]");
-    const step = firstCard ? firstCard.offsetWidth + 16 : el.clientWidth * 0.85;
+    const step = firstCard ? firstCard.offsetWidth + 20 : el.clientWidth * 0.85;
     el.scrollBy({
       left: direction === "left" ? -step : step,
       behavior: "smooth",
     });
   }
 
-  const isEmpty = sorted.length === 0;
+  function handleTagClick(tag: DiscoveryTag) {
+    setActiveTag((prev) => (prev === tag ? null : tag));
+  }
 
-  // Diese Section bricht bewusst aus dem schmalen Hauptcontainer aus.
-  // Sie ist als eigene "Buehne" gedacht: voller Breite des Viewports,
-  // innen aber durch `max-w-7xl` ruhig begrenzt.
+  const isEmptyOverall = open.length === 0;
+  const isEmptyFiltered = sorted.length === 0;
+
   return (
     <section className="w-full bg-gradient-to-b from-stone-50 via-white to-stone-50">
-      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        <header className="mb-5 flex flex-col gap-4 sm:mb-6 sm:flex-row sm:items-end sm:justify-between">
+      {/* Header + Filter bleiben im normalen Content-Container. */}
+      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 pt-6 sm:pt-10">
+        <header className="mb-4 flex flex-col gap-4 sm:mb-5 sm:flex-row sm:items-end sm:justify-between">
           <div className="max-w-2xl">
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-amber-700">
               Inspiration
@@ -114,8 +165,26 @@ export function ActivityDiscovery({
           </div>
         </header>
 
-        {isEmpty ? (
-          <div className="rounded-3xl border border-dashed border-slate-200 bg-white px-6 py-12 text-center shadow-soft">
+        {/* Filterleiste. Mobile: horizontal scrollbar, Desktop: zentriert
+            ausgerichtet. Bewusst keine ausgewachsenen Pills, damit der
+            Bildbereich der Karten der Star bleibt. */}
+        {!isEmptyOverall && (
+          <TagFilterBar
+            activeTag={activeTag}
+            tagCounts={tagCounts}
+            totalCount={open.length}
+            onSelectAll={() => setActiveTag(null)}
+            onSelectTag={handleTagClick}
+          />
+        )}
+      </div>
+
+      {/* Carousel bricht aus dem max-w-7xl aus und nutzt eine groessere
+          Buehne. Fades + Pfeile sitzen jetzt an der Aussenkante der
+          Buehne -- nicht mitten ueber den Karten. */}
+      <div className="mx-auto mt-4 w-full max-w-[1600px] pb-8 sm:mt-5 sm:pb-10">
+        {isEmptyOverall ? (
+          <div className="mx-4 rounded-3xl border border-dashed border-slate-200 bg-white px-6 py-12 text-center shadow-soft sm:mx-6 lg:mx-8">
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-soft">
               <Sparkles size={20} />
             </div>
@@ -126,16 +195,33 @@ export function ActivityDiscovery({
               Mach den ersten Vorschlag fuer die Crew.
             </p>
           </div>
+        ) : isEmptyFiltered ? (
+          <div className="mx-4 rounded-3xl border border-dashed border-slate-200 bg-white px-6 py-10 text-center shadow-soft sm:mx-6 lg:mx-8">
+            <p className="text-base font-medium text-slate-700">
+              Nichts unter &bdquo;{activeTag}&ldquo; verfuegbar.
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              Wechsel den Filter oder schau spaeter wieder vorbei.
+            </p>
+            <button
+              type="button"
+              onClick={() => setActiveTag(null)}
+              className="mt-4 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-sm font-medium text-slate-700 shadow-soft transition hover:bg-slate-50"
+            >
+              Alle Aktivitaeten anzeigen
+            </button>
+          </div>
         ) : (
           <div className="relative">
-            {/* Pfeile (Desktop). Mobil ueber Swipe. */}
+            {/* Pfeile sitzen jetzt am Rand der Buehne (max-w-[1600px]).
+                Auf Mobile per Swipe. */}
             <button
               type="button"
               onClick={() => scrollByCards("left")}
               disabled={!canScrollLeft}
               aria-label="Zurueck scrollen"
               className={
-                "hidden sm:flex absolute left-0 top-1/2 z-10 -translate-y-1/2 -translate-x-1/2 h-11 w-11 items-center justify-center rounded-full bg-white text-slate-800 shadow-lg ring-1 ring-slate-200 transition lg:h-12 lg:w-12 " +
+                "absolute left-2 top-1/2 z-20 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white text-slate-800 shadow-lg ring-1 ring-slate-200 transition sm:flex lg:left-4 lg:h-12 lg:w-12 " +
                 (canScrollLeft
                   ? "opacity-100 hover:bg-slate-50 hover:shadow-xl"
                   : "opacity-0 pointer-events-none")
@@ -149,7 +235,7 @@ export function ActivityDiscovery({
               disabled={!canScrollRight}
               aria-label="Weiter scrollen"
               className={
-                "hidden sm:flex absolute right-0 top-1/2 z-10 -translate-y-1/2 translate-x-1/2 h-11 w-11 items-center justify-center rounded-full bg-white text-slate-800 shadow-lg ring-1 ring-slate-200 transition lg:h-12 lg:w-12 " +
+                "absolute right-2 top-1/2 z-20 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white text-slate-800 shadow-lg ring-1 ring-slate-200 transition sm:flex lg:right-4 lg:h-12 lg:w-12 " +
                 (canScrollRight
                   ? "opacity-100 hover:bg-slate-50 hover:shadow-xl"
                   : "opacity-0 pointer-events-none")
@@ -158,13 +244,27 @@ export function ActivityDiscovery({
               <ChevronRight size={22} />
             </button>
 
-            {/* Sanfte Rand-Verlaeufe, damit klar wird: hier scrollt es. */}
-            <div className="pointer-events-none absolute inset-y-0 left-0 z-[5] hidden w-12 bg-gradient-to-r from-stone-50 to-transparent sm:block" />
-            <div className="pointer-events-none absolute inset-y-0 right-0 z-[5] hidden w-12 bg-gradient-to-l from-stone-50 to-transparent sm:block" />
+            {/* Fade-Masken sitzen am Aussenrand der Buehne, nicht im
+                Content-Container. Auf Mobile (< sm) bewusst aus, damit
+                Touch-Scroll nicht von einem Overlay verdeckt wird. */}
+            <div
+              aria-hidden
+              className={
+                "pointer-events-none absolute inset-y-0 left-0 z-10 hidden w-16 bg-gradient-to-r from-stone-50 via-stone-50/80 to-transparent sm:block " +
+                (canScrollLeft ? "opacity-100" : "opacity-0")
+              }
+            />
+            <div
+              aria-hidden
+              className={
+                "pointer-events-none absolute inset-y-0 right-0 z-10 hidden w-16 bg-gradient-to-l from-stone-50 via-stone-50/80 to-transparent sm:block " +
+                (canScrollRight ? "opacity-100" : "opacity-0")
+              }
+            />
 
             <div
               ref={scrollerRef}
-              className="-mx-4 sm:-mx-6 lg:-mx-8 flex snap-x snap-mandatory gap-5 overflow-x-auto px-4 sm:px-6 lg:px-8 pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              className="flex snap-x snap-mandatory gap-5 overflow-x-auto px-4 sm:px-8 lg:px-16 pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             >
               {sorted.map((proposal) => {
                 const count = interestCounts.get(proposal.id) ?? 0;
@@ -188,6 +288,92 @@ export function ActivityDiscovery({
         )}
       </div>
     </section>
+  );
+}
+
+type TagFilterBarProps = {
+  activeTag: DiscoveryTag | null;
+  tagCounts: Record<DiscoveryTag, number>;
+  totalCount: number;
+  onSelectAll: () => void;
+  onSelectTag: (tag: DiscoveryTag) => void;
+};
+
+function TagFilterBar({
+  activeTag,
+  tagCounts,
+  totalCount,
+  onSelectAll,
+  onSelectTag,
+}: TagFilterBarProps) {
+  const baseClass =
+    "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium ring-1 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300";
+  return (
+    <div
+      role="tablist"
+      aria-label="Aktivitaeten nach Typ filtern"
+      className="flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
+      <span className="hidden items-center gap-1 pr-1 text-xs font-medium uppercase tracking-wide text-slate-500 sm:inline-flex">
+        <Filter size={12} />
+        Filter
+      </span>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={activeTag === null}
+        onClick={onSelectAll}
+        className={
+          baseClass +
+          (activeTag === null
+            ? " bg-slate-900 text-white ring-slate-900 shadow-soft"
+            : " bg-white text-slate-700 ring-slate-200 hover:bg-slate-50")
+        }
+      >
+        Alle
+        <span
+          className={
+            "rounded-full px-1.5 py-0.5 text-[10px] font-semibold " +
+            (activeTag === null
+              ? "bg-white/20 text-white"
+              : "bg-slate-100 text-slate-600")
+          }
+        >
+          {totalCount}
+        </span>
+      </button>
+      {DISCOVERY_TAGS.map((tag) => {
+        const active = activeTag === tag;
+        const count = tagCounts[tag];
+        return (
+          <button
+            key={tag}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onSelectTag(tag)}
+            className={
+              baseClass +
+              (active
+                ? " bg-gradient-to-r from-amber-500 to-orange-500 text-white ring-orange-400 shadow-soft"
+                : " bg-white text-slate-700 ring-slate-200 hover:bg-slate-50")
+            }
+          >
+            {tag}
+            <span
+              className={
+                "rounded-full px-1.5 py-0.5 text-[10px] font-semibold " +
+                (active
+                  ? "bg-white/20 text-white"
+                  : "bg-slate-100 text-slate-600")
+              }
+            >
+              {count}
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -221,9 +407,6 @@ function DiscoveryCard({
   }
 
   return (
-    // Karte selbst ist der klickbare Container. Wir nutzen ein <article>
-    // + role="button", damit innen weitere Buttons (Heart) frei nutzbar
-    // bleiben und keine Buttons verschachtelt werden.
     <article
       data-discovery-card
       role="button"
@@ -329,9 +512,6 @@ function DiscoveryCard({
   );
 }
 
-// Kurzfassung des cost_note fuer die Pille im Banner. Wir wollen keine
-// langen Saetze auf einem Foto -- nur Spanne oder "kostenlos". Wenn nichts
-// erkennbar ist, geben wir null zurueck und lassen die Pille weg.
 function summarizeCost(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const text = raw.trim();
@@ -340,15 +520,12 @@ function summarizeCost(raw: string | null | undefined): string | null {
   if (/(kostenlos|gratis|umsonst|free|0\s*€|0\s*eur)/.test(lower)) {
     return "kostenlos";
   }
-  // Spanne wie "30-45", "30 – 45", "30 bis 45" mit optionalen Waehrungs-
-  // angaben/Punkten.
   const range = text.match(
     /(\d{1,4})(?:\s*(?:[-–—]|bis)\s*)(\d{1,4})\s*(?:€|eur|euro)?/i,
   );
   if (range) {
     return `ca. ${range[1]}–${range[2]} €`;
   }
-  // Einzelbetrag wie "ca. 30 €", "30 EUR", "ab 25 €".
   const single = text.match(/(\d{1,4})\s*(?:€|eur|euro)/i);
   if (single) {
     const prefix = /\bab\b/i.test(text)
@@ -358,6 +535,5 @@ function summarizeCost(raw: string | null | undefined): string | null {
         : "ca.";
     return `${prefix} ${single[1]} €`;
   }
-  // Sonst nichts erkannt -- bewusst keine Pille (eher gar nichts als Muell).
   return null;
 }

@@ -13,9 +13,11 @@ import {
   LogOut,
   MapPin,
   Plus,
+  RotateCcw,
   ShieldCheck,
   StickyNote,
   Sun,
+  Trash2,
   Users,
   UserRound,
 } from "lucide-react";
@@ -62,9 +64,11 @@ const FILTERS: Array<{ key: FilterKey; label: string }> = [
 function matchesFilter(proposal: EventProposal, filter: FilterKey): boolean {
   switch (filter) {
     case "all":
-      return true;
+      // Standardansicht: geloeschte / inaktive Vorschlaege ausblenden.
+      // Wer sie sehen will, waehlt explizit den "Inaktiv"-Filter.
+      return proposal.is_active;
     case "pending":
-      return proposal.moderation_status === "pending";
+      return proposal.moderation_status === "pending" && proposal.is_active;
     case "pool":
       return (
         proposal.moderation_status === "approved" &&
@@ -82,7 +86,7 @@ function matchesFilter(proposal: EventProposal, filter: FilterKey): boolean {
         proposal.moderation_status === "approved" && proposal.is_active
       );
     case "rejected":
-      return proposal.moderation_status === "rejected";
+      return proposal.moderation_status === "rejected" && proposal.is_active;
     case "inactive":
       return !proposal.is_active;
   }
@@ -253,9 +257,75 @@ export default function AdminPage() {
     }
   }
 
+  // Soft Delete: setzt is_active=false. Echtes DELETE ist per RLS bewusst
+  // gesperrt (siehe rls-policies.sql) -- inaktive Eintraege erscheinen
+  // nicht mehr oeffentlich und auch nicht in der Admin-Standardliste.
+  // Ueber den Filter "Inaktiv" sind sie weiter erreichbar und koennen
+  // wiederhergestellt werden.
+  async function handleSoftDelete(proposal: EventProposal) {
+    if (busyId) return;
+    if (
+      !window.confirm(
+        `Aktivitaet "${proposal.title}" wirklich loeschen?\n\nSie wird sofort aus der oeffentlichen Liste entfernt. Du findest sie weiterhin im Filter "Inaktiv" und kannst sie dort wiederherstellen.`,
+      )
+    ) {
+      return;
+    }
+    setBusyId(proposal.id);
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase
+        .from(EVENT_PROPOSALS_TABLE)
+        .update({ is_active: false })
+        .eq("id", proposal.id)
+        .select("*")
+        .single();
+      if (error) throw error;
+      const updated = data as EventProposal;
+      setProposals((prev) =>
+        prev.map((p) => (p.id === proposal.id ? updated : p)),
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Loeschen hat nicht geklappt.";
+      setLoadError(message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleRestore(proposal: EventProposal) {
+    if (busyId) return;
+    setBusyId(proposal.id);
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase
+        .from(EVENT_PROPOSALS_TABLE)
+        .update({ is_active: true })
+        .eq("id", proposal.id)
+        .select("*")
+        .single();
+      if (error) throw error;
+      const updated = data as EventProposal;
+      setProposals((prev) =>
+        prev.map((p) => (p.id === proposal.id ? updated : p)),
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Wiederherstellen hat nicht geklappt.";
+      setLoadError(message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   const counts = useMemo(() => {
     const result: Record<FilterKey, number> = {
-      all: proposals.length,
+      all: 0,
       pending: 0,
       pool: 0,
       planned: 0,
@@ -264,8 +334,13 @@ export default function AdminPage() {
       inactive: 0,
     };
     for (const p of proposals) {
+      if (!p.is_active) {
+        result.inactive += 1;
+        continue;
+      }
+      result.all += 1;
       if (p.moderation_status === "pending") result.pending += 1;
-      if (p.moderation_status === "approved" && p.is_active) {
+      if (p.moderation_status === "approved") {
         result.approved += 1;
         if (isScheduled(p)) {
           result.planned += 1;
@@ -274,7 +349,6 @@ export default function AdminPage() {
         }
       }
       if (p.moderation_status === "rejected") result.rejected += 1;
-      if (!p.is_active) result.inactive += 1;
     }
     return result;
   }, [proposals]);
@@ -409,15 +483,49 @@ export default function AdminPage() {
               <li key={proposal.id}>
                 <div
                   className={
-                    "flex flex-col gap-4 rounded-3xl border bg-white p-5 shadow-card transition " +
+                    "relative flex flex-col gap-4 rounded-3xl border bg-white p-5 shadow-card transition " +
                     (isPending
                       ? "border-sky-200 ring-1 ring-sky-100"
-                      : "border-white")
+                      : !proposal.is_active
+                        ? "border-slate-200 bg-slate-50/70"
+                        : "border-white")
                   }
                 >
+                  {proposal.is_active ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleSoftDelete(proposal)}
+                      disabled={busyId === proposal.id}
+                      aria-label={`Aktivitaet ${proposal.title} loeschen`}
+                      title="Loeschen"
+                      className="absolute right-3 top-3 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-soft transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {busyId === proposal.id ? (
+                        <Loader2 size={15} className="animate-spin" />
+                      ) : (
+                        <Trash2 size={15} />
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void handleRestore(proposal)}
+                      disabled={busyId === proposal.id}
+                      aria-label={`Aktivitaet ${proposal.title} wiederherstellen`}
+                      title="Wiederherstellen"
+                      className="absolute right-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-soft transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {busyId === proposal.id ? (
+                        <Loader2 size={13} className="animate-spin" />
+                      ) : (
+                        <RotateCcw size={13} />
+                      )}
+                      Wiederherstellen
+                    </button>
+                  )}
                   <Link
                     href={`/admin/${proposal.id}`}
-                    className="group flex items-stretch gap-4"
+                    className="group flex items-stretch gap-4 pr-12"
                   >
                     <div className="min-w-0 flex-1 space-y-2">
                       <div className="flex flex-wrap items-center gap-2">

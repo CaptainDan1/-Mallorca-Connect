@@ -111,6 +111,58 @@ export function normalizeLocationArea(input: unknown): LocationArea | null {
   return null;
 }
 
+// Kanonische Liste der Filter-Tags fuer den Aktivitaeten-Banner. Bewusst
+// schlank gehalten -- Stimmung/Typ statt Facetten. Reihenfolge entspricht
+// der Anzeige in der Filterleiste.
+export const DISCOVERY_TAGS = [
+  "Aktion",
+  "Entspannung",
+  "Wasser",
+  "Kultur",
+  "Essen",
+  "Natur",
+  "Party",
+] as const;
+
+export type DiscoveryTag = (typeof DISCOVERY_TAGS)[number];
+
+const DISCOVERY_TAG_LOOKUP: Record<string, DiscoveryTag> = (() => {
+  const map: Record<string, DiscoveryTag> = {};
+  for (const tag of DISCOVERY_TAGS) {
+    map[tag.toLowerCase()] = tag;
+  }
+  // Sanfte Synonyme fuer Robustheit beim Import (alte JSONs / Tippfehler).
+  map["action"] = "Aktion";
+  map["chillen"] = "Entspannung";
+  map["relax"] = "Entspannung";
+  map["entspannen"] = "Entspannung";
+  map["water"] = "Wasser";
+  map["culture"] = "Kultur";
+  map["food"] = "Essen";
+  map["nature"] = "Natur";
+  return map;
+})();
+
+// Normalisiert eine einzelne Tag-Eingabe gegen die kanonische Liste.
+// Liefert null, wenn der Wert nicht zugeordnet werden kann.
+export function normalizeDiscoveryTag(input: unknown): DiscoveryTag | null {
+  if (typeof input !== "string") return null;
+  const cleaned = input.trim().toLowerCase();
+  if (!cleaned) return null;
+  return DISCOVERY_TAG_LOOKUP[cleaned] ?? null;
+}
+
+// Pillen-Farben pro Tag. Fallback ist neutral. Bewusst weich gehalten.
+export const DISCOVERY_TAG_BADGE: Record<DiscoveryTag, string> = {
+  Aktion: "bg-rose-50 text-rose-800 ring-rose-100",
+  Entspannung: "bg-emerald-50 text-emerald-800 ring-emerald-100",
+  Wasser: "bg-sky-50 text-sky-800 ring-sky-100",
+  Kultur: "bg-violet-50 text-violet-800 ring-violet-100",
+  Essen: "bg-amber-50 text-amber-800 ring-amber-100",
+  Natur: "bg-lime-50 text-lime-800 ring-lime-100",
+  Party: "bg-fuchsia-50 text-fuchsia-800 ring-fuchsia-100",
+};
+
 export type ProposalSlot = "morning" | "afternoon" | "evening";
 
 export const PROPOSAL_SLOT_OPTIONS: ProposalSlot[] = [
@@ -166,6 +218,7 @@ export type EventProposal = {
   location_area: string | null;
   category: string | null;
   source_url: string | null;
+  tags: DiscoveryTag[];
   submitted_by_participant_id: string | null;
   created_at: string;
   updated_at: string;
@@ -192,6 +245,7 @@ export type EventProposalInput = {
   location_area: string | null;
   category: string | null;
   source_url: string | null;
+  tags: DiscoveryTag[];
 };
 
 export function emptyProposalInput(): EventProposalInput {
@@ -216,6 +270,7 @@ export function emptyProposalInput(): EventProposalInput {
     location_area: null,
     category: null,
     source_url: null,
+    tags: [],
   };
 }
 

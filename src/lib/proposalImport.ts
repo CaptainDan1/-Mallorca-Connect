@@ -15,11 +15,14 @@
 // =====================================================================
 
 import {
+  DISCOVERY_TAGS,
   LOCATION_AREAS,
   emptyProposalInput,
+  normalizeDiscoveryTag,
   normalizeLocationArea,
   normalizeTitleSlug,
   normalizeUrlLikeInput,
+  type DiscoveryTag,
   type EventProposalInput,
 } from "@/lib/proposals";
 
@@ -192,6 +195,30 @@ function parseRow(
     issues.push({ level: "warning", message: "Bild fehlt" });
   }
 
+  // tags: Whitelist gegen DISCOVERY_TAGS. Akzeptiert Array oder einzelnen
+  // String. Unbekannte Werte produzieren eine Warnung, blockieren aber
+  // nichts. Fallback: wenn nichts ueberbleibt, aus `category` ableiten.
+  const { tags, unknownTags } = parseTagsInput(raw.tags);
+  if (unknownTags.length > 0) {
+    issues.push({
+      level: "warning",
+      message: `Unbekannte Tags ignoriert (${unknownTags.join(", ")}). Erlaubt: ${DISCOVERY_TAGS.join(", ")}`,
+    });
+  }
+  let effectiveTags = tags;
+  if (effectiveTags.length === 0) {
+    const fallback = values.category
+      ? normalizeDiscoveryTag(values.category)
+      : null;
+    if (fallback) {
+      effectiveTags = [fallback];
+      issues.push({
+        level: "warning",
+        message: `Keine Tags angegeben, Fallback aus Kategorie: ${fallback}`,
+      });
+    }
+  }
+
   // Dubletten.
   const slug = values.title ? normalizeTitleSlug(values.title) : "";
   if (slug) {
@@ -231,6 +258,7 @@ function parseRow(
       location_area: normalizedLocation,
       category: values.category,
       source_url: sourceUrl,
+      tags: effectiveTags,
       status: mapped.status,
       moderation_status: mapped.moderation_status,
       is_active: mapped.is_active,
@@ -245,6 +273,37 @@ function parseRow(
     issues,
     titleSlug: slug,
   };
+}
+
+// Akzeptiert Array, einzelnen String, kommagetrennten String oder undefined.
+// Liefert kanonische Tags + Liste der unerkannten Eingaben (fuer Warnung).
+function parseTagsInput(input: unknown): {
+  tags: DiscoveryTag[];
+  unknownTags: string[];
+} {
+  const raw: unknown[] = Array.isArray(input)
+    ? input
+    : typeof input === "string"
+      ? input.split(",")
+      : [];
+  const seen = new Set<DiscoveryTag>();
+  const tags: DiscoveryTag[] = [];
+  const unknownTags: string[] = [];
+  for (const item of raw) {
+    if (typeof item !== "string") continue;
+    const trimmed = item.trim();
+    if (!trimmed) continue;
+    const normalized = normalizeDiscoveryTag(trimmed);
+    if (normalized) {
+      if (!seen.has(normalized)) {
+        seen.add(normalized);
+        tags.push(normalized);
+      }
+    } else {
+      unknownTags.push(trimmed);
+    }
+  }
+  return { tags, unknownTags };
 }
 
 function labelFor(key: (typeof REQUIRED_KEYS)[number]): string {
@@ -328,6 +387,7 @@ export const IMPORT_EXAMPLE_JSON = `[
     "category": "Chillen",
     "sourceUrl": "https://www.mallorqa.com/de/beaches/es-trenc",
     "imageUrl": "",
+    "tags": ["Wasser", "Entspannung", "Natur"],
     "status": "draft"
   }
 ]

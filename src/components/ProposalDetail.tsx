@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  DISCOVERY_TAG_BADGE,
   LOCATION_AREA_BADGE,
   PROPOSAL_SLOT_LABELS,
   PROPOSAL_STATUS_BADGE,
@@ -24,6 +25,7 @@ import {
   formatTripDay,
   isFixed,
   isScheduled,
+  type DiscoveryTag,
   type EventProposal,
 } from "@/lib/proposals";
 import {
@@ -203,7 +205,9 @@ export function ProposalDetail({
             <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
               {proposal.title}
             </h2>
-            {(proposal.location_area || proposal.category) && (
+            {(proposal.location_area ||
+              proposal.category ||
+              (proposal.tags ?? []).length > 0) && (
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {proposal.location_area && (
                   <span
@@ -217,6 +221,14 @@ export function ProposalDetail({
                     {proposal.category}
                   </span>
                 )}
+                {(proposal.tags ?? []).map((tag) => (
+                  <span
+                    key={tag}
+                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${DISCOVERY_TAG_BADGE[tag as DiscoveryTag] ?? "bg-slate-50 text-slate-700 ring-slate-200"}`}
+                  >
+                    #{tag}
+                  </span>
+                ))}
               </div>
             )}
             {proposal.short_description && (

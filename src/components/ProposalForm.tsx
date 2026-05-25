@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Loader2, Save } from "lucide-react";
 import {
+  DISCOVERY_TAGS,
+  DISCOVERY_TAG_BADGE,
   LOCATION_AREAS,
   PROPOSAL_MODERATION_LABELS,
   PROPOSAL_MODERATION_OPTIONS,
@@ -17,6 +19,7 @@ import {
   parseOptionalInt,
   toLocalDatetimeInputValue,
   trimOrNull,
+  type DiscoveryTag,
   type EventProposalInput,
   type ProposalModerationStatus,
   type ProposalSlot,
@@ -81,7 +84,14 @@ export function ProposalForm({
   );
   const [category, setCategory] = useState<string>(base.category ?? "");
   const [sourceUrl, setSourceUrl] = useState<string>(base.source_url ?? "");
+  const [tags, setTags] = useState<DiscoveryTag[]>(base.tags ?? []);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+
+  function toggleTag(tag: DiscoveryTag) {
+    setTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
+    );
+  }
 
   const [titleError, setTitleError] = useState<string | null>(null);
 
@@ -117,6 +127,7 @@ export function ProposalForm({
       location_area: trimOrNull(locationArea),
       category: trimOrNull(category),
       source_url: trimOrNull(sourceUrl),
+      tags,
     };
 
     void onSubmit(payload, pendingFile);
@@ -279,6 +290,36 @@ export function ProposalForm({
             disabled={isSaving}
           />
         </div>
+      </div>
+
+      <div>
+        <span className={labelClass}>Tags (fuer den Banner-Filter)</span>
+        <div className="flex flex-wrap gap-2">
+          {DISCOVERY_TAGS.map((tag) => {
+            const active = tags.includes(tag);
+            return (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => toggleTag(tag)}
+                disabled={isSaving}
+                aria-pressed={active}
+                className={
+                  "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium ring-1 transition " +
+                  (active
+                    ? `${DISCOVERY_TAG_BADGE[tag]} shadow-soft`
+                    : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50")
+                }
+              >
+                {active ? "✓" : "+"} {tag}
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-1 text-xs text-slate-500">
+          Mehrere moeglich. Bestimmt, unter welchen Filtern die Aktivitaet
+          im Banner auftaucht.
+        </p>
       </div>
 
       <div>

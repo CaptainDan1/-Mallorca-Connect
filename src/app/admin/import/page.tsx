@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 import {
+  DISCOVERY_TAG_BADGE,
   EVENT_PROPOSALS_TABLE,
   LOCATION_AREA_BADGE,
   type EventProposal,
@@ -610,6 +611,14 @@ function PreviewRow({
                 {category}
               </span>
             )}
+            {payload?.tags?.map((tag) => (
+              <span
+                key={tag}
+                className={`inline-flex items-center rounded-full px-2 py-0.5 font-medium ring-1 ${DISCOVERY_TAG_BADGE[tag]}`}
+              >
+                #{tag}
+              </span>
+            ))}
           </div>
 
           {payload && (

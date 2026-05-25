@@ -41,6 +41,7 @@ function toInput(proposal: EventProposal): EventProposalInput {
     location_area: proposal.location_area,
     category: proposal.category,
     source_url: proposal.source_url,
+    tags: proposal.tags ?? [],
   };
 }
 
