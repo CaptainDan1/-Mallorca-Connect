@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 import {
+  LAST_SEEN_REFRESH_MS,
   PARTICIPANTS_TABLE,
   PARTICIPANT_ID_STORAGE_KEY,
   type ParticipantInput,
@@ -25,7 +26,14 @@ export type UseParticipantResult = {
 };
 
 const PROFILE_COLUMNS =
-  "id, display_name, hotel_info, avatar_url, created_at, updated_at";
+  "id, display_name, hotel_info, avatar_url, last_seen_at, created_at, updated_at";
+
+function shouldRefreshLastSeen(value: string | null | undefined): boolean {
+  if (!value) return true;
+  const ts = Date.parse(value);
+  if (Number.isNaN(ts)) return true;
+  return Date.now() - ts > LAST_SEEN_REFRESH_MS;
+}
 
 function readStoredId(): string | null {
   if (typeof window === "undefined") return null;
@@ -97,7 +105,24 @@ export function useParticipant(): UseParticipantResult {
         if (error) throw error;
         if (cancelled || !mountedRef.current) return;
         if (data) {
-          setParticipant(data as ParticipantProfile);
+          const profile = data as ParticipantProfile;
+          setParticipant(profile);
+          // last_seen_at sanft mitfuehren: hoechstens einmal pro
+          // LAST_SEEN_REFRESH_MS, damit kein Render-Loop entsteht.
+          if (shouldRefreshLastSeen(profile.last_seen_at)) {
+            const nowIso = new Date().toISOString();
+            void supabase
+              .from(PARTICIPANTS_TABLE)
+              .update({ last_seen_at: nowIso })
+              .eq("id", profile.id)
+              .select(PROFILE_COLUMNS)
+              .single()
+              .then(({ data: updated, error: updateError }) => {
+                if (updateError || !updated) return;
+                if (!mountedRef.current) return;
+                setParticipant(updated as ParticipantProfile);
+              });
+          }
         } else {
           // Stored ID existiert nicht (mehr) in der DB -> verwerfen.
           writeStoredId(null);
@@ -146,6 +171,7 @@ export function useParticipant(): UseParticipantResult {
         const payload = {
           display_name: cleanedName,
           hotel_info: cleanedHotel,
+          last_seen_at: new Date().toISOString(),
         };
 
         let targetId = participant?.id ?? null;

@@ -432,6 +432,13 @@ export default function AdminPage() {
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <Link
+              href="/admin/teilnehmer"
+              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 shadow-soft transition hover:bg-slate-50"
+            >
+              <Users size={14} />
+              Teilnehmer verwalten
+            </Link>
+            <Link
               href="/admin/images"
               className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 shadow-soft transition hover:bg-slate-50"
             >

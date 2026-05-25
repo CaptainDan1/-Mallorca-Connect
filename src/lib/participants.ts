@@ -7,9 +7,14 @@ export type ParticipantProfile = {
   display_name: string;
   hotel_info: string | null;
   avatar_url: string | null;
+  last_seen_at?: string | null;
   created_at?: string;
   updated_at?: string;
 };
+
+// Mindestintervall zwischen zwei `last_seen_at`-Updates pro Profil.
+// Verhindert, dass jeder Render einen Supabase-Roundtrip ausloest.
+export const LAST_SEEN_REFRESH_MS = 15 * 60 * 1000;
 
 export type ParticipantInput = {
   display_name: string;
