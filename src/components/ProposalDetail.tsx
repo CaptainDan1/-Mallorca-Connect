@@ -353,12 +353,7 @@ export function ProposalDetail({
         </div>
 
         <footer className="border-t border-slate-100 bg-stone-50 px-5 py-4 sm:px-7">
-          {!currentParticipantId ? (
-            <p className="text-sm text-slate-600">
-              Bitte speichere zuerst deinen Namen, um{" "}
-              {fixed ? "abzustimmen" : "Interesse zu zeigen"}.
-            </p>
-          ) : fixed ? (
+          {fixed ? (
             <>
               <p className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500">
                 Deine Teilnahme gilt fuer diesen geplanten Zeitraum.

@@ -7,7 +7,6 @@ export type ParticipantProfile = {
   display_name: string;
   hotel_info: string | null;
   avatar_url: string | null;
-  email?: string | null;
   last_seen_at?: string | null;
   created_at?: string;
   updated_at?: string;
@@ -32,10 +31,12 @@ export function isLikelyEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
+// Eingaben fuer das nachtraegliche Bearbeiten eines bereits
+// eingeloggten Profils. E-Mail/Kennwort sind hier bewusst NICHT
+// enthalten -- die laufen ueber die Server-Routen Register/Login.
 export type ParticipantInput = {
   display_name: string;
   hotel_info: string | null;
-  email: string;
 };
 
 export type EventVoteChoice = "in" | "maybe" | "out";

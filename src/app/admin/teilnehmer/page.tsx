@@ -11,15 +11,23 @@ import {
   Copy,
   Eye,
   Hotel,
+  KeyRound,
   Mail,
   ImageOff,
   Loader2,
+  LogIn,
   Search,
   Sparkles,
   Trash2,
   Users,
   X,
 } from "lucide-react";
+
+type AdminCredentialSummary = {
+  participant_id: string;
+  email: string;
+  last_login_at: string | null;
+};
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 import {
   EVENT_VOTES_TABLE,
@@ -45,6 +53,10 @@ type ParticipantRow = ParticipantProfile & {
   voteMaybe: number;
   voteOut: number;
   lastActivity: string | null;
+  // Aus participant_credentials. Nur fuer Admin sichtbar, niemals oeffentlich.
+  email: string | null;
+  lastLoginAt: string | null;
+  hasCredentials: boolean;
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -164,22 +176,47 @@ export default function AdminTeilnehmerPage() {
     setLoadError(null);
     try {
       const supabase = getSupabaseClient();
-      const [participantsRes, votesRes, interestRes] = await Promise.all([
-        supabase
-          .from(PARTICIPANTS_TABLE)
-          .select(
-            "id, display_name, hotel_info, avatar_url, email, last_seen_at, created_at, updated_at",
-          )
-          .order("created_at", { ascending: false }),
-        supabase
-          .from(EVENT_VOTES_TABLE)
-          .select("participant_id, vote, created_at, updated_at"),
-        supabase
-          .from(EVENT_INTEREST_TABLE)
-          .select("participant_id, created_at"),
-      ]);
+      const [participantsRes, votesRes, interestRes, credentialsRes] =
+        await Promise.all([
+          supabase
+            .from(PARTICIPANTS_TABLE)
+            .select(
+              "id, display_name, hotel_info, avatar_url, last_seen_at, created_at, updated_at",
+            )
+            .order("created_at", { ascending: false }),
+          supabase
+            .from(EVENT_VOTES_TABLE)
+            .select("participant_id, vote, created_at, updated_at"),
+          supabase
+            .from(EVENT_INTEREST_TABLE)
+            .select("participant_id, created_at"),
+          // Credentials kommen ueber eine serverseitige Admin-Route,
+          // weil participant_credentials per RLS fuer anon dicht ist.
+          fetch("/api/admin/participants/credentials", {
+            credentials: "same-origin",
+          }),
+        ]);
 
       if (participantsRes.error) throw participantsRes.error;
+
+      // Credentials sind ein "nice to have" -- wenn die Route z.B.
+      // mangels SUPABASE_SERVICE_ROLE_KEY fehlschlaegt, zeigen wir die
+      // Teilnehmer trotzdem an, ohne E-Mail/Login.
+      let credentialMap = new Map<string, AdminCredentialSummary>();
+      if (credentialsRes.ok) {
+        try {
+          const payload = (await credentialsRes.json()) as
+            | { ok: true; credentials: AdminCredentialSummary[] }
+            | { ok: false; error: string };
+          if (payload.ok) {
+            credentialMap = new Map(
+              payload.credentials.map((c) => [c.participant_id, c]),
+            );
+          }
+        } catch {
+          // ignorieren -- ohne Credential-Daten lassen wir die Spalte leer.
+        }
+      }
 
       type VoteAggregate = {
         in: number;
@@ -235,9 +272,11 @@ export default function AdminTeilnehmerPage() {
           latest: null,
         };
         const i = interestMap.get(p.id) ?? { count: 0, latest: null };
+        const credential = credentialMap.get(p.id) ?? null;
         const lastActivity = maxIso([
           v.latest,
           i.latest,
+          credential?.last_login_at ?? null,
           p.last_seen_at,
           p.updated_at,
         ]);
@@ -248,6 +287,9 @@ export default function AdminTeilnehmerPage() {
           voteMaybe: v.maybe,
           voteOut: v.out,
           lastActivity,
+          email: credential?.email ?? null,
+          lastLoginAt: credential?.last_login_at ?? null,
+          hasCredentials: Boolean(credential),
         };
       });
       setRows(enriched);
@@ -568,6 +610,16 @@ function ParticipantCard({
                 Noch ruhig
               </span>
             )}
+            {row.hasCredentials ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                <KeyRound size={11} />
+                Profil gesichert
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                Ohne Login
+              </span>
+            )}
           </div>
 
           {row.hotel_info && (
@@ -603,6 +655,12 @@ function ParticipantCard({
               <Eye size={13} />
               Zuletzt gesehen: {formatRelativeDe(row.last_seen_at)}
             </span>
+            {row.hasCredentials && (
+              <span className="inline-flex items-center gap-1">
+                <LogIn size={13} />
+                Letzter Login: {formatRelativeDe(row.lastLoginAt)}
+              </span>
+            )}
             <span className="inline-flex items-center gap-1">
               <Clock size={13} />
               Letzte Aktivitaet: {formatRelativeDe(row.lastActivity)}

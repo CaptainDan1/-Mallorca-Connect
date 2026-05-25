@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Loader2, MessageSquarePlus } from "lucide-react";
 import { HeroSection } from "@/components/HeroSection";
 import { WelcomeCard } from "@/components/WelcomeCard";
@@ -10,6 +10,7 @@ import { GroupPlan } from "@/components/GroupPlan";
 import { ProposalDetail } from "@/components/ProposalDetail";
 import { SuggestProposalModal } from "@/components/SuggestProposalModal";
 import { Toast, type ToastVariant } from "@/components/Toast";
+import { AuthModal, type AuthMode } from "@/components/AuthModal";
 import { useParticipant } from "@/hooks/useParticipant";
 import { useProposalsPublic } from "@/hooks/useProposalsPublic";
 import {
@@ -27,6 +28,11 @@ type Counts = {
   out: number;
 };
 
+type PendingAction = {
+  run: (profile: ParticipantProfile) => void;
+  reason: string;
+};
+
 export default function HomePage() {
   const {
     participant,
@@ -35,6 +41,8 @@ export default function HomePage() {
     loadError: profileLoadError,
     saveError: profileSaveError,
     saveProfile,
+    applyProfile,
+    logout,
     isUpdatingAvatar,
     avatarError,
     updateAvatarUrl,
@@ -60,6 +68,13 @@ export default function HomePage() {
   const [openProposalId, setOpenProposalId] = useState<string | null>(null);
   const [isSuggestOpen, setIsSuggestOpen] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<AuthMode>("register");
+  const [authReason, setAuthReason] = useState<string | null>(null);
+  // Pending Action wird nach erfolgreichem Login direkt wieder
+  // ausgefuehrt. Per Ref, damit der State sich nicht aenden muss und
+  // wir auch Funktionen mit Closures speichern koennen.
+  const pendingActionRef = useRef<PendingAction | null>(null);
 
   const participantsById = useMemo(() => {
     const map = new Map<string, ParticipantProfile>();
@@ -135,12 +150,29 @@ export default function HomePage() {
     [proposals, openProposalId],
   );
 
+  // Zentraler Gatekeeper fuer geschuetzte Aktionen. Hat der Nutzer ein
+  // Profil, wird die Aktion sofort ausgefuehrt. Sonst speichern wir die
+  // Aktion und oeffnen das AuthModal. Nach erfolgreichem Login wird die
+  // Aktion automatisch nachgezogen.
+  const requireProfile = useCallback(
+    (
+      reason: string,
+      action: (profile: ParticipantProfile) => void,
+    ) => {
+      if (participant) {
+        action(participant);
+        return;
+      }
+      pendingActionRef.current = { run: action, reason };
+      setAuthMode("register");
+      setAuthReason(reason);
+      setAuthOpen(true);
+    },
+    [participant],
+  );
+
   const handleProfileSubmit = useCallback(
-    async (input: {
-      display_name: string;
-      hotel_info: string | null;
-      email: string;
-    }) => {
+    async (input: { display_name: string; hotel_info: string | null }) => {
       const result = await saveProfile(input);
       if (result) {
         setToast({
@@ -179,16 +211,9 @@ export default function HomePage() {
     [updateAvatarUrl, avatarError],
   );
 
-  const handleVote = useCallback(
-    async (proposalId: string, vote: EventVoteChoice) => {
-      if (!participant) {
-        setToast({
-          message: "Bitte speichere zuerst deinen Namen.",
-          variant: "error",
-        });
-        return;
-      }
-      const ok = await voteOn(proposalId, participant.id, vote);
+  const doVote = useCallback(
+    async (proposalId: string, profile: ParticipantProfile, vote: EventVoteChoice) => {
+      const ok = await voteOn(proposalId, profile.id, vote);
       if (ok) {
         setToast({
           message: `Gespeichert: ${VOTE_LABELS[vote]}.`,
@@ -203,25 +228,26 @@ export default function HomePage() {
         });
       }
     },
-    [participant, voteOn, voteError],
+    [voteOn, voteError],
   );
 
-  const handleToggleInterest = useCallback(
-    async (proposalId: string) => {
-      if (!participant) {
-        setToast({
-          message: "Bitte speichere zuerst deinen Namen.",
-          variant: "error",
-        });
-        return;
-      }
+  const handleVote = useCallback(
+    (proposalId: string, vote: EventVoteChoice) => {
+      requireProfile(
+        "Damit wir deine Zusage zuordnen koennen, brauchen wir kurz dein Profil.",
+        (profile) => void doVote(proposalId, profile, vote),
+      );
+    },
+    [requireProfile, doVote],
+  );
+
+  const doToggleInterest = useCallback(
+    async (proposalId: string, profile: ParticipantProfile) => {
       const interested = !myInterestSet.has(proposalId);
-      const ok = await setInterest(proposalId, participant.id, interested);
+      const ok = await setInterest(proposalId, profile.id, interested);
       if (ok) {
         setToast({
-          message: interested
-            ? "Interesse gemerkt."
-            : "Interesse entfernt.",
+          message: interested ? "Interesse gemerkt." : "Interesse entfernt.",
           variant: "success",
         });
       } else {
@@ -233,20 +259,25 @@ export default function HomePage() {
         });
       }
     },
-    [participant, myInterestSet, setInterest, interestError],
+    [myInterestSet, setInterest, interestError],
   );
 
-  function handleOpenSuggest() {
-    if (!participant) {
-      setToast({
-        message:
-          "Bitte speichere zuerst deinen Namen, dann kannst du einen Vorschlag machen.",
-        variant: "error",
-      });
-      return;
-    }
-    setIsSuggestOpen(true);
-  }
+  const handleToggleInterest = useCallback(
+    (proposalId: string) => {
+      requireProfile(
+        "Damit wir dein Interesse merken koennen, brauchen wir kurz dein Profil.",
+        (profile) => void doToggleInterest(proposalId, profile),
+      );
+    },
+    [requireProfile, doToggleInterest],
+  );
+
+  const handleOpenSuggest = useCallback(() => {
+    requireProfile(
+      "Damit wir deinen Vorschlag zuordnen koennen, brauchen wir kurz dein Profil.",
+      () => setIsSuggestOpen(true),
+    );
+  }, [requireProfile]);
 
   function handleSuggestSuccess() {
     setToast({
@@ -257,7 +288,38 @@ export default function HomePage() {
     void reload();
   }
 
-  const canInteract = Boolean(participant) && isConfigured;
+  const handleAuthSuccess = useCallback(
+    (profile: ParticipantProfile) => {
+      applyProfile(profile);
+      setAuthOpen(false);
+      setAuthReason(null);
+      const pending = pendingActionRef.current;
+      pendingActionRef.current = null;
+      if (pending) {
+        // Aktion direkt nach Login ausfuehren -- der Nutzer hat sie ja
+        // gerade aktiv angefordert.
+        pending.run(profile);
+      }
+      setToast({ message: "Eingeloggt.", variant: "success" });
+    },
+    [applyProfile],
+  );
+
+  const handleLogout = useCallback(() => {
+    logout();
+    setToast({ message: "Profil abgemeldet.", variant: "success" });
+  }, [logout]);
+
+  const openAuth = useCallback((mode: AuthMode) => {
+    pendingActionRef.current = null;
+    setAuthMode(mode);
+    setAuthReason(null);
+    setAuthOpen(true);
+  }, []);
+
+  // Wenn Supabase nicht konfiguriert ist, koennen wir gar keine
+  // Aktionen anbieten. UI bleibt sichtbar, aber Buttons sind disabled.
+  const canInteract = isConfigured;
 
   const openInterested = openProposal
     ? (interestByProposal.get(openProposal.id) ?? [])
@@ -270,7 +332,6 @@ export default function HomePage() {
     <main className="min-h-screen bg-stone-50">
       <HeroSection />
 
-      {/* Profilbereich + Hinweise im normalen, schmalen Container. */}
       <div className="mx-auto max-w-3xl px-4 sm:px-6 -mt-12 sm:-mt-16 space-y-6 relative">
         {!isConfigured && (
           <div className="rounded-3xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900 shadow-soft">
@@ -294,14 +355,9 @@ export default function HomePage() {
           isUpdatingAvatar={isUpdatingAvatar}
           avatarError={avatarError}
           onAvatarUploaded={handleAvatarUploaded}
+          onOpenAuth={openAuth}
+          onLogout={handleLogout}
         />
-
-        {!participant && isConfigured && (
-          <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
-            Speichere zuerst deinen Namen, dann kannst du Interesse zeigen,
-            abstimmen und eigene Ideen vorschlagen.
-          </p>
-        )}
 
         {proposalsLoadError && (
           <div
@@ -320,8 +376,6 @@ export default function HomePage() {
         )}
       </div>
 
-      {/* Breite Discovery-Sektion: bewusst AUSSERHALB des max-w-3xl
-          Containers. Eigener breiter Wrapper steckt in der Komponente. */}
       {!proposalsLoading && !proposalsLoadError && (
         <div className="mt-8 sm:mt-10">
           <ActivityDiscovery
@@ -329,7 +383,7 @@ export default function HomePage() {
             interestCounts={interestCounts}
             isInterested={(id) => myInterestSet.has(id)}
             interestBusyFor={interestBusyFor}
-            onToggleInterest={(id) => void handleToggleInterest(id)}
+            onToggleInterest={(id) => handleToggleInterest(id)}
             onOpenProposal={(id) => setOpenProposalId(id)}
             onSuggest={handleOpenSuggest}
             canInteract={canInteract}
@@ -337,9 +391,6 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Gruppenplan steuert seinen Container selbst -- die Wochenplan-
-          Ansicht bricht aus dem schmalen max-w-3xl aus und nutzt eine
-          eigene breite Buehne. Auf <lg bleibt Vertikal und schmal. */}
       {!proposalsLoading && !proposalsLoadError && (
         <div className="mt-8 sm:mt-10">
           <GroupPlan
@@ -352,7 +403,6 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Idee-Hinweis bleibt im schmalen Container. */}
       {!proposalsLoading && !proposalsLoadError && (
         <div className="mx-auto max-w-3xl px-4 sm:px-6 mt-8 sm:mt-10 space-y-8 pb-16 relative">
           <section className="rounded-3xl border border-white bg-white px-5 py-5 shadow-card">
@@ -408,10 +458,7 @@ export default function HomePage() {
           onClose={() => setOpenProposalId(null)}
           onVote={handleVote}
           onToggleInterest={(id) => {
-            // Interesse ist bei Pool- UND vorgemerkten Vorschlaegen
-            // erlaubt. Erst wenn der Vorschlag "fix" ist, schaltet
-            // das Modal auf das finale Voting um.
-            if (!openIsFixed) void handleToggleInterest(id);
+            if (!openIsFixed) handleToggleInterest(id);
           }}
         />
       )}
@@ -431,6 +478,19 @@ export default function HomePage() {
           onClose={() => setToast(null)}
         />
       )}
+
+      <AuthModal
+        open={authOpen}
+        reason={authReason}
+        initialMode={authMode}
+        legacyParticipantId={participant?.id ?? null}
+        onClose={() => {
+          setAuthOpen(false);
+          setAuthReason(null);
+          pendingActionRef.current = null;
+        }}
+        onSuccess={handleAuthSuccess}
+      />
 
       <WelcomeCard
         hasParticipant={Boolean(participant)}

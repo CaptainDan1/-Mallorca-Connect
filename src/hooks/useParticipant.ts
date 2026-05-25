@@ -6,8 +6,6 @@ import {
   LAST_SEEN_REFRESH_MS,
   PARTICIPANTS_TABLE,
   PARTICIPANT_ID_STORAGE_KEY,
-  isLikelyEmail,
-  normalizeEmail,
   type ParticipantInput,
   type ParticipantProfile,
 } from "@/lib/participants";
@@ -19,7 +17,14 @@ export type UseParticipantResult = {
   isSaving: boolean;
   loadError: string | null;
   saveError: string | null;
+  // Aktualisiert Name/Hotel des bereits eingeloggten Profils. Legt KEIN
+  // neues Profil an -- das laeuft jetzt ueber /api/participants/register.
   saveProfile: (input: ParticipantInput) => Promise<ParticipantProfile | null>;
+  // Wird nach erfolgreichem Register/Login/"Profil sichern" aufgerufen.
+  applyProfile: (profile: ParticipantProfile) => void;
+  // Loescht die lokale Profilzuordnung. Der Server-Datensatz bleibt
+  // unangetastet, der Nutzer kann jederzeit per Login wieder einsteigen.
+  logout: () => void;
   isUpdatingAvatar: boolean;
   avatarError: string | null;
   updateAvatarUrl: (
@@ -28,7 +33,7 @@ export type UseParticipantResult = {
 };
 
 const PROFILE_COLUMNS =
-  "id, display_name, hotel_info, avatar_url, email, last_seen_at, created_at, updated_at";
+  "id, display_name, hotel_info, avatar_url, last_seen_at, created_at, updated_at";
 
 function shouldRefreshLastSeen(value: string | null | undefined): boolean {
   if (!value) return true;
@@ -109,8 +114,6 @@ export function useParticipant(): UseParticipantResult {
         if (data) {
           const profile = data as ParticipantProfile;
           setParticipant(profile);
-          // last_seen_at sanft mitfuehren: hoechstens einmal pro
-          // LAST_SEEN_REFRESH_MS, damit kein Render-Loop entsteht.
           if (shouldRefreshLastSeen(profile.last_seen_at)) {
             const nowIso = new Date().toISOString();
             void supabase
@@ -149,8 +152,29 @@ export function useParticipant(): UseParticipantResult {
     };
   }, [configured]);
 
+  const applyProfile = useCallback<UseParticipantResult["applyProfile"]>(
+    (profile) => {
+      writeStoredId(profile.id);
+      if (mountedRef.current) {
+        setParticipant(profile);
+        setLoadError(null);
+        setSaveError(null);
+      }
+    },
+    [],
+  );
+
+  const logout = useCallback<UseParticipantResult["logout"]>(() => {
+    writeStoredId(null);
+    if (mountedRef.current) {
+      setParticipant(null);
+      setSaveError(null);
+      setAvatarError(null);
+    }
+  }, []);
+
   const saveProfile = useCallback<UseParticipantResult["saveProfile"]>(
-    async ({ display_name, hotel_info, email }) => {
+    async ({ display_name, hotel_info }) => {
       if (!configured) {
         setSaveError(
           "Supabase ist nicht konfiguriert. Bitte erst die Environment-Variablen setzen.",
@@ -158,21 +182,18 @@ export function useParticipant(): UseParticipantResult {
         return null;
       }
 
-      const cleanedName = normalizeName(display_name);
-      if (!cleanedName) {
-        setSaveError("Bitte gib deinen Namen ein.");
-        return null;
-      }
-
-      const cleanedEmail = normalizeEmail(email);
-      if (!cleanedEmail) {
+      if (!participant?.id) {
+        // Ohne bestehendes Profil legt dieser Hook nichts mehr an --
+        // dafuer ist /api/participants/register zustaendig.
         setSaveError(
-          "Bitte gib deine E-Mail an. Sie wird nicht oeffentlich angezeigt.",
+          "Bitte erst ein Profil erstellen. Klicke dazu auf eine Aktion wie 'Interessiert'.",
         );
         return null;
       }
-      if (!isLikelyEmail(cleanedEmail)) {
-        setSaveError("Diese E-Mail sieht nicht ganz richtig aus.");
+
+      const cleanedName = normalizeName(display_name);
+      if (!cleanedName) {
+        setSaveError("Bitte gib deinen Namen ein.");
         return null;
       }
 
@@ -185,56 +206,19 @@ export function useParticipant(): UseParticipantResult {
         const payload = {
           display_name: cleanedName,
           hotel_info: cleanedHotel,
-          email: cleanedEmail,
           last_seen_at: new Date().toISOString(),
         };
 
-        // Wiedererkennung:
-        //   1. participant.id (aus localStorage geladen) hat Vorrang.
-        //   2. Sonst Suche nach gleicher E-Mail (case-insensitiv).
-        //   Name-Fallback bewusst entfernt -- Namen sind nicht eindeutig.
-        let targetId = participant?.id ?? null;
-
-        if (!targetId) {
-          const { data: existingRaw, error: lookupError } = await supabase
-            .from(PARTICIPANTS_TABLE)
-            .select("id")
-            .ilike("email", cleanedEmail)
-            .limit(1)
-            .maybeSingle();
-          if (lookupError) throw lookupError;
-          const existing = existingRaw as { id: string } | null;
-          if (existing?.id) {
-            targetId = existing.id;
-          }
-        }
-
-        let result: ParticipantProfile | null = null;
-
-        if (targetId) {
-          const { data, error } = await supabase
-            .from(PARTICIPANTS_TABLE)
-            .update(payload)
-            .eq("id", targetId)
-            .select(PROFILE_COLUMNS)
-            .single();
-          if (error) throw error;
-          result = data as ParticipantProfile;
-        } else {
-          const { data, error } = await supabase
-            .from(PARTICIPANTS_TABLE)
-            .insert(payload)
-            .select(PROFILE_COLUMNS)
-            .single();
-          if (error) throw error;
-          result = data as ParticipantProfile;
-        }
-
-        if (result) {
-          writeStoredId(result.id);
-          if (mountedRef.current) {
-            setParticipant(result);
-          }
+        const { data, error } = await supabase
+          .from(PARTICIPANTS_TABLE)
+          .update(payload)
+          .eq("id", participant.id)
+          .select(PROFILE_COLUMNS)
+          .single();
+        if (error) throw error;
+        const result = data as ParticipantProfile;
+        if (mountedRef.current) {
+          setParticipant(result);
         }
         return result;
       } catch (error) {
@@ -255,7 +239,7 @@ export function useParticipant(): UseParticipantResult {
     async (url) => {
       if (!participant?.id) {
         setAvatarError(
-          "Bitte speichere zuerst dein Profil, bevor du ein Foto hinzufuegst.",
+          "Bitte erst ein Profil erstellen, dann kannst du ein Foto hinzufuegen.",
         );
         return null;
       }
@@ -303,6 +287,8 @@ export function useParticipant(): UseParticipantResult {
     loadError,
     saveError,
     saveProfile,
+    applyProfile,
+    logout,
     isUpdatingAvatar,
     avatarError,
     updateAvatarUrl,
