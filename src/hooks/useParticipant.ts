@@ -17,7 +17,15 @@ export type UseParticipantResult = {
   loadError: string | null;
   saveError: string | null;
   saveProfile: (input: ParticipantInput) => Promise<ParticipantProfile | null>;
+  isUpdatingAvatar: boolean;
+  avatarError: string | null;
+  updateAvatarUrl: (
+    url: string | null,
+  ) => Promise<ParticipantProfile | null>;
 };
+
+const PROFILE_COLUMNS =
+  "id, display_name, hotel_info, avatar_url, created_at, updated_at";
 
 function readStoredId(): string | null {
   if (typeof window === "undefined") return null;
@@ -50,6 +58,9 @@ export function useParticipant(): UseParticipantResult {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+
   const configured = isSupabaseConfigured();
   const mountedRef = useRef(true);
 
@@ -80,7 +91,7 @@ export function useParticipant(): UseParticipantResult {
         const supabase = getSupabaseClient();
         const { data, error } = await supabase
           .from(PARTICIPANTS_TABLE)
-          .select("id, display_name, hotel_info, avatar_url, created_at, updated_at")
+          .select(PROFILE_COLUMNS)
           .eq("id", storedId)
           .maybeSingle();
         if (error) throw error;
@@ -140,8 +151,6 @@ export function useParticipant(): UseParticipantResult {
         let targetId = participant?.id ?? null;
 
         if (!targetId) {
-          // Bei neuem Profil: erst nach existierendem Namen suchen, um
-          // Wiedererkennung auf einem neuen Geraet zu ermoeglichen.
           const { data: existingRaw, error: lookupError } = await supabase
             .from(PARTICIPANTS_TABLE)
             .select("id")
@@ -162,7 +171,7 @@ export function useParticipant(): UseParticipantResult {
             .from(PARTICIPANTS_TABLE)
             .update(payload)
             .eq("id", targetId)
-            .select("id, display_name, hotel_info, avatar_url, created_at, updated_at")
+            .select(PROFILE_COLUMNS)
             .single();
           if (error) throw error;
           result = data as ParticipantProfile;
@@ -170,7 +179,7 @@ export function useParticipant(): UseParticipantResult {
           const { data, error } = await supabase
             .from(PARTICIPANTS_TABLE)
             .insert(payload)
-            .select("id, display_name, hotel_info, avatar_url, created_at, updated_at")
+            .select(PROFILE_COLUMNS)
             .single();
           if (error) throw error;
           result = data as ParticipantProfile;
@@ -197,6 +206,51 @@ export function useParticipant(): UseParticipantResult {
     [configured, participant?.id],
   );
 
+  const updateAvatarUrl = useCallback<UseParticipantResult["updateAvatarUrl"]>(
+    async (url) => {
+      if (!participant?.id) {
+        setAvatarError(
+          "Bitte speichere zuerst dein Profil, bevor du ein Foto hinzufuegst.",
+        );
+        return null;
+      }
+      if (!configured) {
+        setAvatarError(
+          "Supabase ist nicht konfiguriert. Bitte erst die Environment-Variablen setzen.",
+        );
+        return null;
+      }
+
+      setIsUpdatingAvatar(true);
+      setAvatarError(null);
+      try {
+        const supabase = getSupabaseClient();
+        const { data, error } = await supabase
+          .from(PARTICIPANTS_TABLE)
+          .update({ avatar_url: url })
+          .eq("id", participant.id)
+          .select(PROFILE_COLUMNS)
+          .single();
+        if (error) throw error;
+        const result = data as ParticipantProfile;
+        if (mountedRef.current) {
+          setParticipant(result);
+        }
+        return result;
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Profilbild konnte nicht gespeichert werden.";
+        if (mountedRef.current) setAvatarError(message);
+        return null;
+      } finally {
+        if (mountedRef.current) setIsUpdatingAvatar(false);
+      }
+    },
+    [participant?.id, configured],
+  );
+
   return {
     participant,
     isLoading,
@@ -204,5 +258,8 @@ export function useParticipant(): UseParticipantResult {
     loadError,
     saveError,
     saveProfile,
+    isUpdatingAvatar,
+    avatarError,
+    updateAvatarUrl,
   };
 }

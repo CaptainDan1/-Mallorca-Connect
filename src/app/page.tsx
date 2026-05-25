@@ -25,6 +25,9 @@ export default function HomePage() {
     loadError: profileLoadError,
     saveError: profileSaveError,
     saveProfile,
+    isUpdatingAvatar,
+    avatarError,
+    updateAvatarUrl,
   } = useParticipant();
 
   const {
@@ -92,6 +95,26 @@ export default function HomePage() {
     [saveProfile, profileSaveError],
   );
 
+  const handleAvatarUploaded = useCallback(
+    async (publicUrl: string) => {
+      const result = await updateAvatarUrl(publicUrl);
+      if (result) {
+        setToast({
+          message: "Profilfoto aktualisiert.",
+          variant: "success",
+        });
+      } else {
+        setToast({
+          message:
+            avatarError ||
+            "Profilfoto konnte nicht gespeichert werden. Bitte versuche es noch einmal.",
+          variant: "error",
+        });
+      }
+    },
+    [updateAvatarUrl, avatarError],
+  );
+
   const handleVote = useCallback(
     async (proposalId: string, vote: EventVoteChoice) => {
       if (!participant) {
@@ -146,6 +169,9 @@ export default function HomePage() {
           saveError={profileSaveError}
           disabled={!isConfigured}
           onSubmit={handleProfileSubmit}
+          isUpdatingAvatar={isUpdatingAvatar}
+          avatarError={avatarError}
+          onAvatarUploaded={handleAvatarUploaded}
         />
 
         <section className="space-y-3">

@@ -1,20 +1,30 @@
+"use client";
+
+import { useState } from "react";
 import Image from "next/image";
 import { CalendarDays, MapPin } from "lucide-react";
 
-const HERO_IMAGE =
+// Bevorzugt das lokale Hero-Bild aus public/images/hero/. Wenn die Datei
+// (noch) nicht im Repo liegt, faellt die App auf das Unsplash-Bild zurueck.
+const LOCAL_HERO = "/images/hero/mallorca-bucht.jpg";
+const FALLBACK_HERO =
   "https://images.unsplash.com/photo-1559564454-0bad35676ee7?auto=format&fit=crop&w=1200&q=80";
 
 export function HeroSection() {
+  const [useFallback, setUseFallback] = useState(false);
+  const src = useFallback ? FALLBACK_HERO : LOCAL_HERO;
+
   return (
     <section className="relative overflow-hidden">
       <div className="relative h-[68vh] min-h-[440px] w-full">
         <Image
-          src={HERO_IMAGE}
+          src={src}
           alt="Bucht auf Mallorca mit tuerkisem Meer"
           fill
           priority
           sizes="100vw"
           className="object-cover"
+          onError={() => setUseFallback(true)}
         />
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/30 to-black/70" />
         <div className="absolute inset-0 flex items-end">

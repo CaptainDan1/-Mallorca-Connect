@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, Loader2, UserRound } from "lucide-react";
 import { avatarGradient, getInitials } from "@/lib/utils";
 import type { ParticipantProfile } from "@/lib/participants";
+import { AvatarUpload } from "@/components/AvatarUpload";
 
 type ProfileCardProps = {
   participant: ParticipantProfile | null;
@@ -13,6 +14,9 @@ type ProfileCardProps = {
   saveError: string | null;
   disabled?: boolean;
   onSubmit: (input: { display_name: string; hotel_info: string | null }) => Promise<void> | void;
+  isUpdatingAvatar: boolean;
+  avatarError: string | null;
+  onAvatarUploaded: (publicUrl: string) => Promise<void> | void;
 };
 
 export function ProfileCard({
@@ -23,6 +27,9 @@ export function ProfileCard({
   saveError,
   disabled,
   onSubmit,
+  isUpdatingAvatar,
+  avatarError,
+  onAvatarUploaded,
 }: ProfileCardProps) {
   const [name, setName] = useState(participant?.display_name ?? "");
   const [hotel, setHotel] = useState(participant?.hotel_info ?? "");
@@ -62,22 +69,29 @@ export function ProfileCard({
 
   return (
     <section className="rounded-3xl bg-white p-5 sm:p-6 shadow-card border border-white">
-      <div className="mb-4 flex items-center gap-4">
-        <div
-          className={`flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br ${gradient} text-base font-semibold text-white shadow-soft`}
-        >
-          {avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={avatarUrl}
-              alt={participant?.display_name ?? "Profilbild"}
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <span>{initials}</span>
+      <div className="mb-4 flex items-start gap-4">
+        <div className="relative">
+          <div
+            className={`flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br ${gradient} text-base font-semibold text-white shadow-soft`}
+          >
+            {avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={avatarUrl}
+                alt={participant?.display_name ?? "Profilbild"}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <span>{initials}</span>
+            )}
+          </div>
+          {isUpdatingAvatar && (
+            <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-black/40 text-white">
+              <Loader2 size={18} className="animate-spin" />
+            </div>
           )}
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-amber-700">
             <UserRound size={16} />
             <span className="text-xs font-medium uppercase tracking-wide">
@@ -166,6 +180,31 @@ export function ProfileCard({
           )}
         </button>
       </form>
+
+      <div className="mt-5 border-t border-slate-100 pt-4">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+          Profilfoto
+        </p>
+        {participant?.id ? (
+          <>
+            <AvatarUpload
+              participantId={participant.id}
+              disabled={disabled || isUpdatingAvatar}
+              onUploaded={onAvatarUploaded}
+            />
+            {avatarError && (
+              <p role="alert" className="mt-2 text-xs text-rose-700">
+                {avatarError}
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="text-sm text-slate-500">
+            Speichere zuerst deinen Namen, dann kannst du ein Profilfoto
+            hochladen.
+          </p>
+        )}
+      </div>
     </section>
   );
 }

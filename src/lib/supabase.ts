@@ -1,19 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-export type Vote = {
-  id: number;
-  created_at: string;
-  user_name: string;
-  hotel_info: string | null;
-  ebike_tour: boolean;
-  roller_tour: boolean;
-  schnorcheln: boolean;
-  bootsausflug: boolean;
-  megapark: boolean;
-};
-
-export type VotePayload = Omit<Vote, "id" | "created_at">;
-
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
