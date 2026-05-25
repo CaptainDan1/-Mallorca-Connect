@@ -8,12 +8,14 @@ import {
   CalendarRange,
   ChevronRight,
   EyeOff,
+  Heart,
   Loader2,
   LogOut,
   MapPin,
   Plus,
   ShieldCheck,
   StickyNote,
+  Sun,
   Users,
   UserRound,
 } from "lucide-react";
@@ -31,9 +33,12 @@ import {
   type EventProposal,
 } from "@/lib/proposals";
 import {
+  EVENT_VOTES_TABLE,
   PARTICIPANTS_TABLE,
+  type EventVote,
   type ParticipantProfile,
 } from "@/lib/participants";
+import { EVENT_INTEREST_TABLE, type EventInterest } from "@/lib/interest";
 
 type FilterKey =
   | "all"
@@ -91,6 +96,12 @@ export default function AdminPage() {
   const [submitters, setSubmitters] = useState<
     Map<string, ParticipantProfile>
   >(new Map());
+  const [votesByProposal, setVotesByProposal] = useState<
+    Map<string, { in: number; maybe: number; out: number }>
+  >(new Map());
+  const [interestCountByProposal, setInterestCountByProposal] = useState<
+    Map<string, number>
+  >(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -140,6 +151,47 @@ export default function AdminPage() {
       } else {
         setSubmitters(new Map());
       }
+
+      // Counts pro Vorschlag: Votes + Interesse.
+      const [votesRes, interestRes] = await Promise.all([
+        supabase
+          .from(EVENT_VOTES_TABLE)
+          .select("proposal_id, vote"),
+        supabase
+          .from(EVENT_INTEREST_TABLE)
+          .select("proposal_id"),
+      ]);
+      const voteMap = new Map<
+        string,
+        { in: number; maybe: number; out: number }
+      >();
+      for (const v of (votesRes.data as Pick<
+        EventVote,
+        "proposal_id" | "vote"
+      >[]) ?? []) {
+        const bucket = voteMap.get(v.proposal_id) ?? {
+          in: 0,
+          maybe: 0,
+          out: 0,
+        };
+        if (v.vote === "in") bucket.in += 1;
+        else if (v.vote === "maybe") bucket.maybe += 1;
+        else bucket.out += 1;
+        voteMap.set(v.proposal_id, bucket);
+      }
+      setVotesByProposal(voteMap);
+
+      const interestMap = new Map<string, number>();
+      for (const i of (interestRes.data as Pick<
+        EventInterest,
+        "proposal_id"
+      >[]) ?? []) {
+        interestMap.set(
+          i.proposal_id,
+          (interestMap.get(i.proposal_id) ?? 0) + 1,
+        );
+      }
+      setInterestCountByProposal(interestMap);
     } catch (error) {
       const message =
         error instanceof Error
@@ -463,6 +515,20 @@ export default function AdminPage() {
                           {proposal.plan_note}
                         </p>
                       )}
+
+                      <AdminCounts
+                        scheduled={scheduled}
+                        interestCount={
+                          interestCountByProposal.get(proposal.id) ?? 0
+                        }
+                        votes={
+                          votesByProposal.get(proposal.id) ?? {
+                            in: 0,
+                            maybe: 0,
+                            out: 0,
+                          }
+                        }
+                      />
                     </div>
 
                     <div className="flex items-center text-slate-400 group-hover:text-sky-500">
@@ -500,5 +566,47 @@ export default function AdminPage() {
         </ul>
       </div>
     </main>
+  );
+}
+
+function AdminCounts({
+  scheduled,
+  interestCount,
+  votes,
+}: {
+  scheduled: boolean;
+  interestCount: number;
+  votes: { in: number; maybe: number; out: number };
+}) {
+  if (scheduled) {
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 font-medium text-emerald-800 ring-1 ring-emerald-100">
+          <Users size={12} />
+          {votes.in} dabei
+        </span>
+        <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-0.5 font-medium text-amber-800 ring-1 ring-amber-100">
+          {votes.maybe} vielleicht
+        </span>
+        <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 font-medium text-slate-600 ring-1 ring-slate-200">
+          {votes.out} raus
+        </span>
+        {interestCount > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-0.5 font-medium text-rose-800 ring-1 ring-rose-100">
+            <Heart size={12} />
+            {interestCount} fruehes Interesse
+          </span>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 font-medium text-amber-800 ring-1 ring-amber-100">
+        <Sun size={12} />
+        {interestCount} interessiert
+      </span>
+      <span className="text-slate-500">&middot; noch nicht eingeplant</span>
+    </div>
   );
 }

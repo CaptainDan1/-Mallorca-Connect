@@ -3,18 +3,25 @@
 import { useEffect, useMemo } from "react";
 import {
   CalendarClock,
+  CalendarRange,
   Coins,
+  Heart,
   Hourglass,
   Loader2,
   MapPin,
   Sparkles,
+  StickyNote,
+  Sun,
   Users,
   X,
 } from "lucide-react";
 import {
+  PROPOSAL_SLOT_LABELS,
   PROPOSAL_STATUS_BADGE,
   PROPOSAL_STATUS_LABELS,
   formatProposalDate,
+  formatTripDay,
+  isScheduled,
   type EventProposal,
 } from "@/lib/proposals";
 import {
@@ -34,8 +41,13 @@ type ProposalDetailProps = {
   currentParticipantId: string | null;
   isVoting: boolean;
   voteError: string | null;
+  interestedParticipants: ParticipantProfile[];
+  isInterested: boolean;
+  isTogglingInterest: boolean;
+  interestError: string | null;
   onClose: () => void;
   onVote: (proposalId: string, vote: EventVoteChoice) => Promise<void> | void;
+  onToggleInterest: (proposalId: string) => Promise<void> | void;
 };
 
 export function ProposalDetail({
@@ -45,10 +57,16 @@ export function ProposalDetail({
   currentParticipantId,
   isVoting,
   voteError,
+  interestedParticipants,
+  isInterested,
+  isTogglingInterest,
+  interestError,
   onClose,
   onVote,
+  onToggleInterest,
 }: ProposalDetailProps) {
   const eventDate = formatProposalDate(proposal.event_start);
+  const scheduled = isScheduled(proposal);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -138,12 +156,32 @@ export function ProposalDetail({
           >
             <X size={18} />
           </button>
-          <div className="absolute left-3 top-3">
+          <div className="absolute left-3 top-3 flex flex-wrap items-center gap-2">
             <span
               className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${PROPOSAL_STATUS_BADGE[proposal.status]}`}
             >
               {PROPOSAL_STATUS_LABELS[proposal.status]}
             </span>
+            {!scheduled && (
+              <span className="inline-flex items-center rounded-full bg-white/85 px-2.5 py-1 text-xs font-medium text-slate-700 backdrop-blur">
+                Noch nicht eingeplant
+              </span>
+            )}
+            {scheduled && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-white/85 px-2.5 py-1 text-xs font-medium text-sky-800 backdrop-blur">
+                <CalendarRange size={12} />
+                {formatTripDay(proposal.scheduled_day as string)}
+                {" · "}
+                {
+                  PROPOSAL_SLOT_LABELS[
+                    proposal.scheduled_slot as
+                      | "morning"
+                      | "afternoon"
+                      | "evening"
+                  ]
+                }
+              </span>
+            )}
           </div>
         </div>
 
@@ -182,6 +220,13 @@ export function ProposalDetail({
             )}
           </dl>
 
+          {proposal.plan_note && (
+            <p className="flex items-start gap-2 rounded-2xl bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-100">
+              <StickyNote size={16} className="mt-0.5 shrink-0" />
+              <span>{proposal.plan_note}</span>
+            </p>
+          )}
+
           {proposal.long_description && (
             <section>
               <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
@@ -193,42 +238,65 @@ export function ProposalDetail({
             </section>
           )}
 
-          <section className="rounded-2xl bg-emerald-50 px-4 py-4 ring-1 ring-emerald-200">
-            <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-emerald-900">
-              <Users size={14} />
-              Wer ist dabei?
-            </h3>
-            <ProposalAttendees
-              participants={inParticipants}
-              maxAvatars={8}
-              size="lg"
-              emptyText="Noch niemand dabei. Mach den Anfang."
-            />
-          </section>
+          {scheduled ? (
+            <>
+              <section className="rounded-2xl bg-emerald-50 px-4 py-4 ring-1 ring-emerald-200">
+                <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-emerald-900">
+                  <Users size={14} />
+                  Wer ist dabei?
+                </h3>
+                <ProposalAttendees
+                  participants={inParticipants}
+                  maxAvatars={8}
+                  size="lg"
+                  emptyText="Noch niemand dabei. Mach den Anfang."
+                />
+              </section>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <SmallBucket
-              title="Vielleicht"
-              tone="amber"
-              participants={maybeParticipants}
-            />
-            <SmallBucket
-              title="Bin raus"
-              tone="slate"
-              participants={outParticipants}
-            />
-          </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <SmallBucket
+                  title="Vielleicht"
+                  tone="amber"
+                  participants={maybeParticipants}
+                />
+                <SmallBucket
+                  title="Bin raus"
+                  tone="slate"
+                  participants={outParticipants}
+                />
+              </div>
+            </>
+          ) : (
+            <section className="rounded-2xl bg-amber-50 px-4 py-4 ring-1 ring-amber-200">
+              <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-amber-900">
+                <Sun size={14} />
+                Wer findet das interessant?
+              </h3>
+              <p className="mb-3 text-sm text-amber-900/80">
+                Diese Idee ist noch nicht fest eingeplant. Wenn dich das
+                interessiert, markiere sie &ndash; daraus kann spaeter eine
+                Gruppe entstehen.
+              </p>
+              <ProposalAttendees
+                participants={interestedParticipants}
+                maxAvatars={8}
+                size="lg"
+                emptyText="Noch niemand interessiert. Mach den Anfang."
+              />
+            </section>
+          )}
         </div>
 
         <footer className="border-t border-slate-100 bg-stone-50 px-5 py-4 sm:px-7">
           {!currentParticipantId ? (
             <p className="text-sm text-slate-600">
-              Bitte speichere zuerst deinen Namen, um abzustimmen.
+              Bitte speichere zuerst deinen Namen, um{" "}
+              {scheduled ? "abzustimmen" : "Interesse zu zeigen"}.
             </p>
-          ) : (
+          ) : scheduled ? (
             <>
               <p className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500">
-                Deine Stimme
+                Deine Teilnahme gilt fuer diesen geplanten Zeitraum.
               </p>
               <div className="grid grid-cols-3 gap-2">
                 {VOTE_OPTIONS.map((option) => {
@@ -262,6 +330,38 @@ export function ProposalDetail({
               </div>
               {voteError && (
                 <p className="mt-3 text-sm text-rose-700">{voteError}</p>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500">
+                Zeig Interesse, damit der Admin sieht, ob sich eine Gruppe
+                lohnt.
+              </p>
+              <button
+                type="button"
+                onClick={() => onToggleInterest(proposal.id)}
+                disabled={isTogglingInterest}
+                aria-pressed={isInterested}
+                className={
+                  "flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 " +
+                  (isInterested
+                    ? "bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-soft hover:from-rose-500 hover:to-pink-600"
+                    : "bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50")
+                }
+              >
+                {isTogglingInterest ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Heart
+                    size={14}
+                    className={isInterested ? "fill-current" : ""}
+                  />
+                )}
+                {isInterested ? "Interesse gemerkt" : "Interessiert"}
+              </button>
+              {interestError && (
+                <p className="mt-3 text-sm text-rose-700">{interestError}</p>
               )}
             </>
           )}

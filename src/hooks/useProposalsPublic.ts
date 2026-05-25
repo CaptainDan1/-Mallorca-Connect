@@ -13,10 +13,15 @@ import {
   EVENT_PROPOSALS_TABLE,
   type EventProposal,
 } from "@/lib/proposals";
+import {
+  EVENT_INTEREST_TABLE,
+  type EventInterest,
+} from "@/lib/interest";
 
 export type UseProposalsPublicResult = {
   proposals: EventProposal[];
   votes: EventVote[];
+  interests: EventInterest[];
   participants: ParticipantProfile[];
   isLoading: boolean;
   loadError: string | null;
@@ -29,16 +34,26 @@ export type UseProposalsPublicResult = {
   ) => Promise<boolean>;
   votingFor: string | null;
   voteError: string | null;
+  setInterest: (
+    proposalId: string,
+    participantId: string,
+    interested: boolean,
+  ) => Promise<boolean>;
+  interestBusyFor: string | null;
+  interestError: string | null;
 };
 
 export function useProposalsPublic(): UseProposalsPublicResult {
   const [proposals, setProposals] = useState<EventProposal[]>([]);
   const [votes, setVotes] = useState<EventVote[]>([]);
+  const [interests, setInterests] = useState<EventInterest[]>([]);
   const [participants, setParticipants] = useState<ParticipantProfile[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [votingFor, setVotingFor] = useState<string | null>(null);
   const [voteError, setVoteError] = useState<string | null>(null);
+  const [interestBusyFor, setInterestBusyFor] = useState<string | null>(null);
+  const [interestError, setInterestError] = useState<string | null>(null);
 
   const configured = isSupabaseConfigured();
   const mountedRef = useRef(true);
@@ -56,26 +71,30 @@ export function useProposalsPublic(): UseProposalsPublicResult {
     setLoadError(null);
     try {
       const supabase = getSupabaseClient();
-      const [proposalsRes, votesRes, participantsRes] = await Promise.all([
-        supabase
-          .from(EVENT_PROPOSALS_TABLE)
-          .select("*")
-          .eq("is_active", true)
-          .eq("moderation_status", "approved")
-          .order("sort_order", { ascending: true })
-          .order("event_start", { ascending: true, nullsFirst: false }),
-        supabase.from(EVENT_VOTES_TABLE).select("*"),
-        supabase
-          .from(PARTICIPANTS_TABLE)
-          .select("id, display_name, hotel_info, avatar_url"),
-      ]);
+      const [proposalsRes, votesRes, interestsRes, participantsRes] =
+        await Promise.all([
+          supabase
+            .from(EVENT_PROPOSALS_TABLE)
+            .select("*")
+            .eq("is_active", true)
+            .eq("moderation_status", "approved")
+            .order("sort_order", { ascending: true })
+            .order("event_start", { ascending: true, nullsFirst: false }),
+          supabase.from(EVENT_VOTES_TABLE).select("*"),
+          supabase.from(EVENT_INTEREST_TABLE).select("*"),
+          supabase
+            .from(PARTICIPANTS_TABLE)
+            .select("id, display_name, hotel_info, avatar_url"),
+        ]);
       if (proposalsRes.error) throw proposalsRes.error;
       if (votesRes.error) throw votesRes.error;
+      if (interestsRes.error) throw interestsRes.error;
       if (participantsRes.error) throw participantsRes.error;
 
       if (!mountedRef.current) return;
       setProposals((proposalsRes.data as EventProposal[]) ?? []);
       setVotes((votesRes.data as EventVote[]) ?? []);
+      setInterests((interestsRes.data as EventInterest[]) ?? []);
       setParticipants(
         (participantsRes.data as ParticipantProfile[]) ?? [],
       );
@@ -100,11 +119,10 @@ export function useProposalsPublic(): UseProposalsPublicResult {
     };
   }, [load]);
 
-  // Realtime: event_proposals + event_votes. Bei votes-Events laden wir
-  // zusaetzlich participants nach, falls ein neuer Voter unbekannt ist.
-  // Auf participants selbst legen wir keinen Channel (in Schritt 1 wurde
-  // Realtime nur fuer proposals/votes aktiviert; Profil-Renames sind
-  // selten und werden beim naechsten Vote-Event automatisch mitgeholt).
+  // Realtime: event_proposals + event_votes + event_interest. Bei
+  // votes/interest-Events laden wir den ganzen Satz neu, damit auch
+  // unbekannte Teilnehmer mitgeholt werden. participants selbst hat
+  // keinen eigenen Channel (Profile aendern sich selten).
   useEffect(() => {
     if (!configured) return;
     let cancelled = false;
@@ -133,10 +151,22 @@ export function useProposalsPublic(): UseProposalsPublicResult {
       )
       .subscribe();
 
+    const interestChannel = supabase
+      .channel("mallorca_event_interest")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: EVENT_INTEREST_TABLE },
+        () => {
+          if (!cancelled) void load();
+        },
+      )
+      .subscribe();
+
     return () => {
       cancelled = true;
       void supabase.removeChannel(proposalsChannel);
       void supabase.removeChannel(votesChannel);
+      void supabase.removeChannel(interestChannel);
     };
   }, [configured, load]);
 
@@ -197,9 +227,90 @@ export function useProposalsPublic(): UseProposalsPublicResult {
     [configured],
   );
 
+  const setInterest = useCallback<UseProposalsPublicResult["setInterest"]>(
+    async (proposalId, participantId, interested) => {
+      if (!configured) {
+        setInterestError(
+          "Supabase ist nicht konfiguriert. Bitte erst die Environment-Variablen setzen.",
+        );
+        return false;
+      }
+
+      setInterestBusyFor(proposalId);
+      setInterestError(null);
+      try {
+        const supabase = getSupabaseClient();
+
+        if (interested) {
+          // Idempotenter Insert: on conflict (participant_id, proposal_id)
+          // do nothing -- supabase-js per upsert mit ignoreDuplicates.
+          const { data, error } = await supabase
+            .from(EVENT_INTEREST_TABLE)
+            .upsert(
+              { participant_id: participantId, proposal_id: proposalId },
+              {
+                onConflict: "participant_id,proposal_id",
+                ignoreDuplicates: true,
+              },
+            )
+            .select()
+            .maybeSingle();
+          if (error) throw error;
+          if (mountedRef.current) {
+            // Wenn der Eintrag schon existierte, liefert Supabase null.
+            // Optimistisch nichts zu tun -- der bestehende Eintrag ist
+            // bereits in `interests`. Falls neu, lokal anhaengen.
+            if (data) {
+              const inserted = data as EventInterest;
+              setInterests((prev) =>
+                prev.some(
+                  (i) =>
+                    i.participant_id === inserted.participant_id &&
+                    i.proposal_id === inserted.proposal_id,
+                )
+                  ? prev
+                  : [...prev, inserted],
+              );
+            }
+          }
+        } else {
+          const { error } = await supabase
+            .from(EVENT_INTEREST_TABLE)
+            .delete()
+            .eq("participant_id", participantId)
+            .eq("proposal_id", proposalId);
+          if (error) throw error;
+          if (mountedRef.current) {
+            setInterests((prev) =>
+              prev.filter(
+                (i) =>
+                  !(
+                    i.participant_id === participantId &&
+                    i.proposal_id === proposalId
+                  ),
+              ),
+            );
+          }
+        }
+        return true;
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Interesse konnte nicht gespeichert werden.";
+        if (mountedRef.current) setInterestError(message);
+        return false;
+      } finally {
+        if (mountedRef.current) setInterestBusyFor(null);
+      }
+    },
+    [configured],
+  );
+
   return {
     proposals,
     votes,
+    interests,
     participants,
     isLoading,
     loadError,
@@ -208,5 +319,8 @@ export function useProposalsPublic(): UseProposalsPublicResult {
     voteOn,
     votingFor,
     voteError,
+    setInterest,
+    interestBusyFor,
+    interestError,
   };
 }

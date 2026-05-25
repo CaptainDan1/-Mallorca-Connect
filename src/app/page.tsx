@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, MessageSquarePlus } from "lucide-react";
 import { HeroSection } from "@/components/HeroSection";
 import { ProfileCard } from "@/components/ProfileCard";
+import { ActivityDiscovery } from "@/components/ActivityDiscovery";
 import { GroupPlan } from "@/components/GroupPlan";
-import { ActivityPool } from "@/components/ActivityPool";
 import { ProposalDetail } from "@/components/ProposalDetail";
 import { SuggestProposalModal } from "@/components/SuggestProposalModal";
 import { Toast, type ToastVariant } from "@/components/Toast";
@@ -16,6 +16,7 @@ import {
   type EventVoteChoice,
   type ParticipantProfile,
 } from "@/lib/participants";
+import { isScheduled } from "@/lib/proposals";
 
 type ToastState = { message: string; variant: ToastVariant } | null;
 
@@ -41,6 +42,7 @@ export default function HomePage() {
   const {
     proposals,
     votes,
+    interests,
     participants,
     isLoading: proposalsLoading,
     loadError: proposalsLoadError,
@@ -49,6 +51,9 @@ export default function HomePage() {
     voteOn,
     votingFor,
     voteError,
+    setInterest,
+    interestBusyFor,
+    interestError,
   } = useProposalsPublic();
 
   const [openProposalId, setOpenProposalId] = useState<string | null>(null);
@@ -94,6 +99,35 @@ export default function HomePage() {
     }
     return map;
   }, [votes, participant]);
+
+  const interestByProposal = useMemo(() => {
+    const map = new Map<string, ParticipantProfile[]>();
+    for (const p of proposals) map.set(p.id, []);
+    for (const i of interests) {
+      const list = map.get(i.proposal_id);
+      if (!list) continue;
+      const profile = participantsById.get(i.participant_id);
+      if (profile) list.push(profile);
+    }
+    return map;
+  }, [interests, proposals, participantsById]);
+
+  const myInterestSet = useMemo(() => {
+    const set = new Set<string>();
+    if (!participant) return set;
+    for (const i of interests) {
+      if (i.participant_id === participant.id) set.add(i.proposal_id);
+    }
+    return set;
+  }, [interests, participant]);
+
+  const interestCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const [proposalId, people] of interestByProposal.entries()) {
+      map.set(proposalId, people.length);
+    }
+    return map;
+  }, [interestByProposal]);
 
   const openProposal = useMemo(
     () => proposals.find((p) => p.id === openProposalId) ?? null,
@@ -167,6 +201,36 @@ export default function HomePage() {
     [participant, voteOn, voteError],
   );
 
+  const handleToggleInterest = useCallback(
+    async (proposalId: string) => {
+      if (!participant) {
+        setToast({
+          message: "Bitte speichere zuerst deinen Namen.",
+          variant: "error",
+        });
+        return;
+      }
+      const interested = !myInterestSet.has(proposalId);
+      const ok = await setInterest(proposalId, participant.id, interested);
+      if (ok) {
+        setToast({
+          message: interested
+            ? "Interesse gemerkt."
+            : "Interesse entfernt.",
+          variant: "success",
+        });
+      } else {
+        setToast({
+          message:
+            interestError ||
+            "Interesse konnte nicht gespeichert werden. Bitte versuche es noch einmal.",
+          variant: "error",
+        });
+      }
+    },
+    [participant, myInterestSet, setInterest, interestError],
+  );
+
   function handleOpenSuggest() {
     if (!participant) {
       setToast({
@@ -188,7 +252,14 @@ export default function HomePage() {
     void reload();
   }
 
-  const canSuggest = Boolean(participant) && isConfigured;
+  const canInteract = Boolean(participant) && isConfigured;
+
+  const openInterested = openProposal
+    ? (interestByProposal.get(openProposal.id) ?? [])
+    : [];
+  const openIsInterested =
+    openProposal != null && myInterestSet.has(openProposal.id);
+  const openScheduled = openProposal ? isScheduled(openProposal) : false;
 
   return (
     <main className="min-h-screen bg-stone-50">
@@ -219,13 +290,11 @@ export default function HomePage() {
           onAvatarUploaded={handleAvatarUploaded}
         />
 
-        {votingFor && (
-          <div className="flex justify-end">
-            <span className="inline-flex items-center gap-1 text-xs font-medium text-sky-700">
-              <Loader2 size={12} className="animate-spin" />
-              Speichere Stimme...
-            </span>
-          </div>
+        {!participant && isConfigured && (
+          <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+            Speichere zuerst deinen Namen, dann kannst du Interesse zeigen,
+            abstimmen und eigene Ideen vorschlagen.
+          </p>
         )}
 
         {proposalsLoadError && (
@@ -246,6 +315,17 @@ export default function HomePage() {
 
         {!proposalsLoading && !proposalsLoadError && (
           <>
+            <ActivityDiscovery
+              proposals={proposals}
+              interestCounts={interestCounts}
+              isInterested={(id) => myInterestSet.has(id)}
+              interestBusyFor={interestBusyFor}
+              onToggleInterest={(id) => void handleToggleInterest(id)}
+              onOpenProposal={(id) => setOpenProposalId(id)}
+              onSuggest={handleOpenSuggest}
+              canInteract={canInteract}
+            />
+
             <GroupPlan
               proposals={proposals}
               countsByProposal={countsByProposal}
@@ -253,22 +333,38 @@ export default function HomePage() {
               onOpenProposal={(id) => setOpenProposalId(id)}
             />
 
-            {!participant && isConfigured && (
-              <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
-                Speichere zuerst deinen Namen, dann kannst du abstimmen und
-                eigene Ideen vorschlagen.
-              </p>
-            )}
-
-            <ActivityPool
-              proposals={proposals}
-              countsByProposal={countsByProposal}
-              myVoteByProposal={myVoteByProposal}
-              onOpenProposal={(id) => setOpenProposalId(id)}
-              onSuggest={handleOpenSuggest}
-              canSuggest={canSuggest}
-            />
+            <section className="rounded-3xl border border-white bg-white px-5 py-5 shadow-card">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900">
+                    Eine eigene Idee?
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Schlag etwas vor &ndash; nach kurzer Freigabe taucht es
+                    bei &bdquo;Aktivitaeten entdecken&ldquo; auf.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleOpenSuggest}
+                  disabled={!canInteract}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2.5 text-sm font-semibold text-white shadow-soft transition active:scale-[0.99] hover:from-amber-500 hover:to-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <MessageSquarePlus size={16} />
+                  Idee vorschlagen
+                </button>
+              </div>
+            </section>
           </>
+        )}
+
+        {votingFor && (
+          <div className="flex justify-end">
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-sky-700">
+              <Loader2 size={12} className="animate-spin" />
+              Speichere Stimme...
+            </span>
+          </div>
         )}
 
         <footer className="pt-4 text-center text-xs text-slate-400">
@@ -284,8 +380,15 @@ export default function HomePage() {
           currentParticipantId={participant?.id ?? null}
           isVoting={votingFor === openProposal.id}
           voteError={voteError}
+          interestedParticipants={openInterested}
+          isInterested={openIsInterested}
+          isTogglingInterest={interestBusyFor === openProposal.id}
+          interestError={interestError}
           onClose={() => setOpenProposalId(null)}
           onVote={handleVote}
+          onToggleInterest={(id) => {
+            if (!openScheduled) void handleToggleInterest(id);
+          }}
         />
       )}
 
