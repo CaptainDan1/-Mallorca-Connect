@@ -332,9 +332,11 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Plan + Idee-Hinweis bleiben im schmalen Container. */}
+      {/* Gruppenplan steuert seinen Container selbst -- die Wochenplan-
+          Ansicht bricht aus dem schmalen max-w-3xl aus und nutzt eine
+          eigene breite Buehne. Auf <lg bleibt Vertikal und schmal. */}
       {!proposalsLoading && !proposalsLoadError && (
-        <div className="mx-auto max-w-3xl px-4 sm:px-6 mt-8 sm:mt-10 space-y-8 pb-16 relative">
+        <div className="mt-8 sm:mt-10">
           <GroupPlan
             proposals={proposals}
             countsByProposal={countsByProposal}
@@ -342,7 +344,12 @@ export default function HomePage() {
             interestCounts={interestCounts}
             onOpenProposal={(id) => setOpenProposalId(id)}
           />
+        </div>
+      )}
 
+      {/* Idee-Hinweis bleibt im schmalen Container. */}
+      {!proposalsLoading && !proposalsLoadError && (
+        <div className="mx-auto max-w-3xl px-4 sm:px-6 mt-8 sm:mt-10 space-y-8 pb-16 relative">
           <section className="rounded-3xl border border-white bg-white px-5 py-5 shadow-card">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>

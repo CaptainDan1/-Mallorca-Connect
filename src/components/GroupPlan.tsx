@@ -43,17 +43,33 @@ export function GroupPlan({
   onOpenProposal,
 }: GroupPlanProps) {
   // SSR-sicher mit "vertical" starten, damit Mobile-First keine Hydration-
-  // Mismatches verursacht. Nach Mount auf "weekly" hochschalten, sobald wir
-  // sicher wissen, dass wir auf Desktop sind. Bewusst kein localStorage --
-  // der Auftrag verlangt explizit keine Speicherung.
+  // Mismatches verursacht. Der Wochenplan ist explizit eine Desktop-Ansicht
+  // und wird auf <lg gar nicht erst angeboten -- der Toggle ist ausgeblendet
+  // und wir zwingen `effectiveMode = "vertical"`.
   const [viewMode, setViewMode] = useState<ViewMode>("vertical");
+  const [isWideScreen, setIsWideScreen] = useState(false);
+
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return;
     const mq = window.matchMedia("(min-width: 1024px)");
+    setIsWideScreen(mq.matches);
     if (mq.matches) {
       setViewMode((current) => (current === "vertical" ? "weekly" : current));
     }
+    // Auf Resize / DevTools-Wechsel mitkriegen, sonst bleibt Toggle haengen.
+    const onChange = (event: MediaQueryListEvent) => {
+      setIsWideScreen(event.matches);
+    };
+    if (mq.addEventListener) {
+      mq.addEventListener("change", onChange);
+      return () => mq.removeEventListener("change", onChange);
+    }
+    // Safari < 14 Fallback.
+    mq.addListener(onChange);
+    return () => mq.removeListener(onChange);
   }, []);
+
+  const effectiveMode: ViewMode = isWideScreen ? viewMode : "vertical";
 
   // Vorberechnung Tag -> Slot -> Proposals einmal teilen; beide Ansichten
   // nutzen dieselbe Datenquelle (`scheduled_day`, `scheduled_slot`).
@@ -98,8 +114,17 @@ export function GroupPlan({
     return map;
   }, [proposals]);
 
+  // Wochenplan bricht aus dem schmalen Content-Container aus -- der
+  // Wrapper liegt deshalb hier in der Komponente. Vertical bleibt im
+  // gewohnten max-w-3xl, damit Mobile- und Tablet-Layout unveraendert
+  // sind.
+  const isWeekly = effectiveMode === "weekly";
+  const outerClass = isWeekly
+    ? "mx-auto w-full max-w-[1600px] px-4 sm:px-6 lg:px-10"
+    : "mx-auto w-full max-w-3xl px-4 sm:px-6";
+
   return (
-    <section className="space-y-4">
+    <section className={outerClass + " space-y-4"}>
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-xl font-semibold tracking-tight text-slate-900">
@@ -111,11 +136,15 @@ export function GroupPlan({
             finale Abstimmung.
           </p>
         </div>
-        <ViewToggle value={viewMode} onChange={setViewMode} />
+        {/* Toggle erst ab lg sichtbar. Auf <lg ist Wochenplan bewusst nicht
+            erreichbar -- gequetschte Spalten waeren keine bessere UX. */}
+        {isWideScreen && (
+          <ViewToggle value={viewMode} onChange={setViewMode} />
+        )}
       </header>
 
-      {viewMode === "vertical" ? (
-        <VerticalPlan
+      {isWeekly ? (
+        <WeeklyPlan
           byDayAndSlot={byDayAndSlot}
           countsByProposal={countsByProposal}
           myVoteByProposal={myVoteByProposal}
@@ -123,7 +152,7 @@ export function GroupPlan({
           onOpenProposal={onOpenProposal}
         />
       ) : (
-        <WeeklyPlan
+        <VerticalPlan
           byDayAndSlot={byDayAndSlot}
           countsByProposal={countsByProposal}
           myVoteByProposal={myVoteByProposal}
@@ -345,14 +374,15 @@ function WeeklyPlan({
   onOpenProposal,
 }: SharedPlanProps) {
   // Spaltenanzahl == TRIP_DAYS.length (5 heute, ggf. spaeter 7).
-  // Auf schmalen Bildschirmen darf horizontal gescrollt werden.
-  // `min-w` so waehlen, dass Tageskarten lesbar bleiben.
+  // Auf schmalen Bildschirmen darf horizontal gescrollt werden -- in
+  // der Praxis ist der Wochenplan aber sowieso erst ab lg sichtbar.
+  // `min-w` so waehlen, dass Tagesspalten grosszuegig wirken.
   return (
     <div className="overflow-x-auto -mx-2 px-2 pb-2">
       <div
-        className="grid gap-3"
+        className="grid gap-4"
         style={{
-          gridTemplateColumns: `repeat(${TRIP_DAYS.length}, minmax(220px, 1fr))`,
+          gridTemplateColumns: `repeat(${TRIP_DAYS.length}, minmax(260px, 1fr))`,
         }}
       >
         {TRIP_DAYS.map((day) => {

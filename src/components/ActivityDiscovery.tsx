@@ -14,9 +14,12 @@ import {
 } from "lucide-react";
 import {
   DISCOVERY_TAGS,
+  LOCATION_AREAS,
+  LOCATION_AREA_BADGE,
   isScheduled,
   type DiscoveryTag,
   type EventProposal,
+  type LocationArea,
 } from "@/lib/proposals";
 
 type ActivityDiscoveryProps = {
@@ -40,9 +43,13 @@ export function ActivityDiscovery({
   onSuggest,
   canInteract,
 }: ActivityDiscoveryProps) {
-  // Aktiver Tag-Filter. `null` = "Alle". Wird nur clientseitig gehalten,
-  // keine URL- oder Local-Storage-Bindung.
+  // Aktiver Tag-Filter ("Was?"). `null` = "Alles". Wird nur clientseitig
+  // gehalten, keine URL- oder Local-Storage-Bindung.
   const [activeTag, setActiveTag] = useState<DiscoveryTag | null>(null);
+  // Aktiver Region-Filter ("Wo?"). `null` = "Ganze Insel". `Ganze Insel` ist
+  // bewusst kein gespeicherter location_area-Wert, sondern nur die UI-Form
+  // fuer "kein Regionsfilter".
+  const [activeArea, setActiveArea] = useState<LocationArea | null>(null);
 
   // Nur freigegebene, aktive Vorschlaege ohne festen Slot.
   const open = useMemo(
@@ -50,8 +57,8 @@ export function ActivityDiscovery({
     [proposals],
   );
 
-  // Counts pro Tag fuer die Filterleiste -- zeigt Nutzern, wieviel pro
-  // Filter zu erwarten ist (kleine Zahl in der Pille).
+  // Counts pro Tag fuer die Was-Leiste. Wir respektieren bereits den
+  // aktiven Wo-Filter, damit die Zahlen nicht luegen.
   const tagCounts = useMemo(() => {
     const counts: Record<DiscoveryTag, number> = {
       Aktion: 0,
@@ -63,18 +70,47 @@ export function ActivityDiscovery({
       Party: 0,
     };
     for (const p of open) {
+      if (activeArea && p.location_area !== activeArea) continue;
       const tags = p.tags ?? [];
       for (const tag of tags) {
         if (tag in counts) counts[tag as DiscoveryTag] += 1;
       }
     }
     return counts;
-  }, [open]);
+  }, [open, activeArea]);
+
+  // Counts pro Region fuer die Wo-Leiste -- respektiert den aktiven
+  // Was-Filter, damit die Zahlen sich gegenseitig erklaeren.
+  const areaCounts = useMemo(() => {
+    const counts = {} as Record<LocationArea, number>;
+    for (const area of LOCATION_AREAS) counts[area] = 0;
+    for (const p of open) {
+      if (activeTag && !(p.tags ?? []).includes(activeTag)) continue;
+      const area = p.location_area as LocationArea | null;
+      if (area && area in counts) counts[area] += 1;
+    }
+    return counts;
+  }, [open, activeTag]);
+
+  // Gesamtsummen fuer "Alles" / "Ganze Insel" -- jeweils unter
+  // Beruecksichtigung des anderen Filters.
+  const totalForCurrentArea = useMemo(() => {
+    if (!activeArea) return open.length;
+    return open.filter((p) => p.location_area === activeArea).length;
+  }, [open, activeArea]);
+
+  const totalForCurrentTag = useMemo(() => {
+    if (!activeTag) return open.length;
+    return open.filter((p) => (p.tags ?? []).includes(activeTag)).length;
+  }, [open, activeTag]);
 
   const filtered = useMemo(() => {
-    if (!activeTag) return open;
-    return open.filter((p) => (p.tags ?? []).includes(activeTag));
-  }, [open, activeTag]);
+    return open.filter((p) => {
+      if (activeTag && !(p.tags ?? []).includes(activeTag)) return false;
+      if (activeArea && p.location_area !== activeArea) return false;
+      return true;
+    });
+  }, [open, activeTag, activeArea]);
 
   const sorted = useMemo(
     () =>
@@ -109,13 +145,13 @@ export function ActivityDiscovery({
     };
   }, [updateScrollState, sorted.length]);
 
-  // Wenn der Filter wechselt, zurueck nach links scrollen -- so sieht der
+  // Wenn ein Filter wechselt, zurueck nach links scrollen -- so sieht der
   // Nutzer sofort, was die neue Auswahl bringt.
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
     el.scrollTo({ left: 0, behavior: "smooth" });
-  }, [activeTag]);
+  }, [activeTag, activeArea]);
 
   function scrollByCards(direction: "left" | "right") {
     const el = scrollerRef.current;
@@ -130,6 +166,10 @@ export function ActivityDiscovery({
 
   function handleTagClick(tag: DiscoveryTag) {
     setActiveTag((prev) => (prev === tag ? null : tag));
+  }
+
+  function handleAreaClick(area: LocationArea) {
+    setActiveArea((prev) => (prev === area ? null : area));
   }
 
   const isEmptyOverall = open.length === 0;
@@ -165,17 +205,25 @@ export function ActivityDiscovery({
           </div>
         </header>
 
-        {/* Filterleiste. Mobile: horizontal scrollbar, Desktop: zentriert
-            ausgerichtet. Bewusst keine ausgewachsenen Pills, damit der
-            Bildbereich der Karten der Star bleibt. */}
+        {/* Zwei Chip-Zeilen: "Was?" (Tag) und "Wo?" (Region). Mobile:
+            horizontal scrollbar. Desktop: nebeneinander mit kleinem Label. */}
         {!isEmptyOverall && (
-          <TagFilterBar
-            activeTag={activeTag}
-            tagCounts={tagCounts}
-            totalCount={open.length}
-            onSelectAll={() => setActiveTag(null)}
-            onSelectTag={handleTagClick}
-          />
+          <div className="space-y-2">
+            <TagFilterBar
+              activeTag={activeTag}
+              tagCounts={tagCounts}
+              totalCount={totalForCurrentArea}
+              onSelectAll={() => setActiveTag(null)}
+              onSelectTag={handleTagClick}
+            />
+            <AreaFilterBar
+              activeArea={activeArea}
+              areaCounts={areaCounts}
+              totalCount={totalForCurrentTag}
+              onSelectAll={() => setActiveArea(null)}
+              onSelectArea={handleAreaClick}
+            />
+          </div>
         )}
       </div>
 
@@ -198,17 +246,21 @@ export function ActivityDiscovery({
         ) : isEmptyFiltered ? (
           <div className="mx-4 rounded-3xl border border-dashed border-slate-200 bg-white px-6 py-10 text-center shadow-soft sm:mx-6 lg:mx-8">
             <p className="text-base font-medium text-slate-700">
-              Nichts unter &bdquo;{activeTag}&ldquo; verfuegbar.
+              Nichts gefunden{activeTag ? ` unter "${activeTag}"` : ""}
+              {activeArea ? ` in ${activeArea}` : ""}.
             </p>
             <p className="mt-1 text-sm text-slate-500">
-              Wechsel den Filter oder schau spaeter wieder vorbei.
+              Wechsel die Filter oder schau spaeter wieder vorbei.
             </p>
             <button
               type="button"
-              onClick={() => setActiveTag(null)}
+              onClick={() => {
+                setActiveTag(null);
+                setActiveArea(null);
+              }}
               className="mt-4 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-sm font-medium text-slate-700 shadow-soft transition hover:bg-slate-50"
             >
-              Alle Aktivitaeten anzeigen
+              Filter zuruecksetzen
             </button>
           </div>
         ) : (
@@ -299,6 +351,34 @@ type TagFilterBarProps = {
   onSelectTag: (tag: DiscoveryTag) => void;
 };
 
+const FILTER_PILL =
+  "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium ring-1 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300";
+
+const FILTER_LABEL =
+  "hidden w-14 shrink-0 items-center gap-1 pr-1 text-xs font-medium uppercase tracking-wide text-slate-500 sm:inline-flex";
+
+const FILTER_COUNT_ACTIVE = "bg-white/20 text-white";
+const FILTER_COUNT_IDLE = "bg-slate-100 text-slate-600";
+
+function FilterCountBadge({
+  count,
+  active,
+}: {
+  count: number;
+  active: boolean;
+}) {
+  return (
+    <span
+      className={
+        "rounded-full px-1.5 py-0.5 text-[10px] font-semibold " +
+        (active ? FILTER_COUNT_ACTIVE : FILTER_COUNT_IDLE)
+      }
+    >
+      {count}
+    </span>
+  );
+}
+
 function TagFilterBar({
   activeTag,
   tagCounts,
@@ -306,17 +386,15 @@ function TagFilterBar({
   onSelectAll,
   onSelectTag,
 }: TagFilterBarProps) {
-  const baseClass =
-    "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium ring-1 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300";
   return (
     <div
       role="tablist"
       aria-label="Aktivitaeten nach Typ filtern"
       className="flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
-      <span className="hidden items-center gap-1 pr-1 text-xs font-medium uppercase tracking-wide text-slate-500 sm:inline-flex">
+      <span className={FILTER_LABEL}>
         <Filter size={12} />
-        Filter
+        Was?
       </span>
       <button
         type="button"
@@ -324,23 +402,14 @@ function TagFilterBar({
         aria-selected={activeTag === null}
         onClick={onSelectAll}
         className={
-          baseClass +
+          FILTER_PILL +
           (activeTag === null
             ? " bg-slate-900 text-white ring-slate-900 shadow-soft"
             : " bg-white text-slate-700 ring-slate-200 hover:bg-slate-50")
         }
       >
-        Alle
-        <span
-          className={
-            "rounded-full px-1.5 py-0.5 text-[10px] font-semibold " +
-            (activeTag === null
-              ? "bg-white/20 text-white"
-              : "bg-slate-100 text-slate-600")
-          }
-        >
-          {totalCount}
-        </span>
+        Alles
+        <FilterCountBadge count={totalCount} active={activeTag === null} />
       </button>
       {DISCOVERY_TAGS.map((tag) => {
         const active = activeTag === tag;
@@ -353,23 +422,85 @@ function TagFilterBar({
             aria-selected={active}
             onClick={() => onSelectTag(tag)}
             className={
-              baseClass +
+              FILTER_PILL +
               (active
                 ? " bg-gradient-to-r from-amber-500 to-orange-500 text-white ring-orange-400 shadow-soft"
                 : " bg-white text-slate-700 ring-slate-200 hover:bg-slate-50")
             }
           >
             {tag}
-            <span
-              className={
-                "rounded-full px-1.5 py-0.5 text-[10px] font-semibold " +
-                (active
-                  ? "bg-white/20 text-white"
-                  : "bg-slate-100 text-slate-600")
-              }
-            >
-              {count}
-            </span>
+            <FilterCountBadge count={count} active={active} />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+type AreaFilterBarProps = {
+  activeArea: LocationArea | null;
+  areaCounts: Record<LocationArea, number>;
+  totalCount: number;
+  onSelectAll: () => void;
+  onSelectArea: (area: LocationArea) => void;
+};
+
+function AreaFilterBar({
+  activeArea,
+  areaCounts,
+  totalCount,
+  onSelectAll,
+  onSelectArea,
+}: AreaFilterBarProps) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Aktivitaeten nach Region filtern"
+      className="flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
+      <span className={FILTER_LABEL}>
+        <Filter size={12} />
+        Wo?
+      </span>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={activeArea === null}
+        onClick={onSelectAll}
+        className={
+          FILTER_PILL +
+          (activeArea === null
+            ? " bg-slate-900 text-white ring-slate-900 shadow-soft"
+            : " bg-white text-slate-700 ring-slate-200 hover:bg-slate-50")
+        }
+      >
+        Ganze Insel
+        <FilterCountBadge count={totalCount} active={activeArea === null} />
+      </button>
+      {LOCATION_AREAS.map((area) => {
+        const active = activeArea === area;
+        const count = areaCounts[area];
+        // Aktive Pille nutzt die kanonische Regions-Farbe (laesst sich
+        // visuell vom orangen Was-Filter unterscheiden).
+        const activeTone =
+          " ring-sky-300 shadow-soft " +
+          (LOCATION_AREA_BADGE[area] ?? "bg-sky-50 text-sky-800 ring-sky-100");
+        return (
+          <button
+            key={area}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onSelectArea(area)}
+            className={
+              FILTER_PILL +
+              (active
+                ? activeTone
+                : " bg-white text-slate-700 ring-slate-200 hover:bg-slate-50")
+            }
+          >
+            {area}
+            <FilterCountBadge count={count} active={false} />
           </button>
         );
       })}
